@@ -21,7 +21,7 @@ It writes `ledger.toml`, `net1.toml` to `netN.toml` and two reserve scripts, and
 
 1. Make the users `fc` and `fc-keys`, with `fc-keys` in the group `fc`.
 2. In `/etc/fc/`, owned by `fc-keys` and readable only by it, put `ces.toml` (the `ledger.toml`), `master.key` (`openssl rand -hex 32`), `reader.key` (a private key from `ces --genkeypair`) and `think.key` (the model's API key). Back up `master.key`, since it seals the people's keys.
-3. Fill in `/etc/fc/fc.env` and `/etc/fc/bridge.env` from the examples, with the same `FC_GRANT` in both, and run `reserves-ledger.sh` once as `fc-keys`.
+3. Fill in `/etc/fc/fc.env` and `/etc/fc/bridge.env` from the examples, and run `reserves-ledger.sh` once as `fc-keys`. `FC_GRANT` in `bridge.env` sets the grant to each new key.
 4. Install `ces` built with `--think` in `/opt/fc/ces/`, `fc-bridge` in `/opt/fc/bridge/`, and `ceshd` (Linux 6.7 or later) in `/opt/fc/ceshd/` with the no-login user `ceshd`.
 5. Copy `app/` to `/opt/fc/app/`, make the venv in `/opt/fc/venv`, and run `manage.py migrate --run-syncdb` and `collectstatic`.
 6. Install the units in `systemd/` and the `Caddyfile`, start them, enable `fc-walk.timer`, and open the ledger's UDP port.

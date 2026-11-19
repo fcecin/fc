@@ -105,9 +105,6 @@ FC_CHAT_CONTEXT = env("FC_CHAT_CONTEXT", "")
 FC_LEDGER = env("FC_LEDGER", "127.0.0.1:55100" if DEBUG else None)
 if not FC_LEDGER:
     raise RuntimeError("Set FC_LEDGER")
-# The grant to each new key, in raw units, for the pages. The bridge gives
-# the grant (its own FC_GRANT).
-FC_GRANT = int(env("FC_GRANT", "20000000000"))
 # API calls per minute for each account.
 FC_API_RATE = int(env("FC_API_RATE", "240"))
 # The site sends every change to the hub (fc/hub.py) on this socket, and
