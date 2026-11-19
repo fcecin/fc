@@ -99,6 +99,8 @@ FC_BRIDGE_SOCKET = env("FC_BRIDGE_SOCKET", "/run/fc/bridge.sock")
 # The network's main CES server (host:port), which the sky draws in a style of
 # its own. Empty: none.
 FC_MAIN_SERVER = env("FC_MAIN_SERVER", "")
+# Text at the end of the chat model's rules, for this installation. Empty: none.
+FC_CHAT_CONTEXT = env("FC_CHAT_CONTEXT", "")
 # This installation's ledger, by its public address (host:port).
 FC_LEDGER = env("FC_LEDGER", "127.0.0.1:55100" if DEBUG else None)
 if not FC_LEDGER:

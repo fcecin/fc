@@ -1279,6 +1279,7 @@ class ChatCesh(Base):
         self.assertEqual(result, {"role": "tool", "tool_call_id": "call_1",
                                   "content": 'ran `cesh query`: exit 0\n{"balance":5}'})
         rules = self.fake.requests[0]["messages"][0]["content"]
+        self.assertTrue(rules.endswith("notes."))   # no installation text here
         self.assertIn("cat ~/AGENTS.md", rules)
         self.assertIn(Profile.objects.get(user=u).pubkey, rules)
         self.assertIn(NET[0], rules)
@@ -1286,6 +1287,13 @@ class ChatCesh(Base):
         self.assertLess(len(rules), 2500)
         m = [x for x in lines if x.kind == "model"][0]
         self.assertEqual(kernel.line_json(m)["text"], "I look.")
+
+    def test_the_installation_adds_its_text_to_the_rules(self):
+        u = self.person("ana")
+        with self.settings(FC_CHAT_CONTEXT="Read /library/x.md first."):
+            self.turn(u, "hi")
+        rules = self.fake.requests[-1]["messages"][0]["content"]
+        self.assertTrue(rules.endswith("notes.\nRead /library/x.md first."), rules[-80:])
 
     def test_any_command_runs(self):
         u = self.person("ana")
@@ -2280,6 +2288,7 @@ class ShellUnit(TestCase):
                   "RestrictAddressFamilies=AF_UNIX", "BindPaths=/var/lib/private/fc-shells/u42:/h/u42",
                   "BindPaths=/run/fc-shells/u42:/run/fcsh", "WorkingDirectory=/h/u42", "User=fcsh-u42",
                   "TemporaryFileSystem=/h:size=1M /var:size=16M", "ReadOnlyPaths=+/tmp",
+                  "BindReadOnlyPaths=-/opt/fc/library:/library",
                   "SystemCallFilter=@system-service", "CapabilityBoundingSet="):
             self.assertIn(p, props)
         self.assertEqual(args[:2], ["systemd-run", "--unit=fcsh-u42.service"])

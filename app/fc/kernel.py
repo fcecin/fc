@@ -91,6 +91,8 @@ def _head(user):
     p = Profile.objects.get(user=user)
     head = RULES.format(name=settings.FC_NAME, pubkey=p.pubkey, server=account.here(p),
                         ledger=settings.FC_LEDGER)
+    if settings.FC_CHAT_CONTEXT:
+        head += "\n" + settings.FC_CHAT_CONTEXT
     if s is not None:
         head += "\n\n## Earlier in this conversation (a summary)\n\n" + s.text
     return head

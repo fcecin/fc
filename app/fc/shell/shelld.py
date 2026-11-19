@@ -23,6 +23,7 @@ CODE = "/opt/fc/app/fc/shell"    # ptyhost.py and bin/, which the unit sees as /
 ROOT = "/var/lib/fc-shells-root"  # the file system that a shell sees (skeleton())
 STATE = "/var/lib/private/fc-shells"  # the homes, where systemd hands them to the units' users
 HOMES = "/var/lib/fc-shells-homes"    # the home images, one per person
+LIBRARY = "/opt/fc/library"      # the site's files for every shell, read-only at /library
 IMAGE_MIB = 22                   # 16 MiB free after ext4's journal and tables
 MAX_MSG = 4096
 UNIT = re.compile(r"^fcsh-u(\d+)\.service$")
@@ -35,6 +36,7 @@ SETTINGS = [
     "MountAPIVFS=yes",
     "BindReadOnlyPaths=/usr /etc/alternatives",
     f"BindReadOnlyPaths={CODE}:/opt/fcsh",
+    f"BindReadOnlyPaths=-{LIBRARY}:/library",      # "-": a box with no library skips it
     # A fresh /h and /var in every unit, with its home on top, so other homes'
     # mount points stay hidden. They live in memory, smaller than MemoryMax, so a
     # big write there fails with "no space" and the shell survives.
@@ -114,7 +116,7 @@ def skeleton(root=ROOT, etc="/etc"):
                 except OSError:
                     pass
     for d in ("usr", "etc", "etc/alternatives", "h", "tmp", "var", "dev", "proc", "sys",
-              "run/fcsh", "opt/fcsh"):
+              "run/fcsh", "opt/fcsh", "library"):
         os.makedirs(os.path.join(root, d), exist_ok=True)
     for name in ("bin", "sbin", "lib", "lib64"):
         link = os.path.join(root, name)
