@@ -1,0 +1,5 @@
+<RCC>
+  <qresource prefix="/">
+    <file alias="fc-miner.png">../pack/fc-miner.png</file>
+  </qresource>
+</RCC>

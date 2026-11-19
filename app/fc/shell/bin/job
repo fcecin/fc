@@ -1,0 +1,129 @@
+#!/usr/bin/python3
+"""job: background commands of this shell (jobs.py), which can wake the
+assistant when they end, or at a line of their output.
+
+  job run [--wake] [--until REGEX] CMD...   run CMD in the background, and print its number
+  job ls                                    the jobs: number, state, time, command
+  job tail N [LINES]                        the last lines of job N's output (20)
+  job kill N                                end job N
+
+One word of CMD is a line of bash, as for bash -c, and more words are one
+command and its arguments. --wake wakes the assistant when the job ends, and
+--until at the first line that matches REGEX (Python re), or at the end when
+no line matched. A job wakes the assistant at most once."""
+
+import json
+import os
+import shlex
+import socket
+import sys
+
+USAGE = __doc__.split("\n\n")[1]
+MAX_REPLY = 1 << 20
+
+
+def ask(req):
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+    try:
+        s.settimeout(5)
+        s.connect(os.environ.get("FCSH_JOBS", os.path.expanduser("~/.fc/jobs/sock")))
+        s.send(json.dumps(req).encode())
+        return json.loads(s.recv(MAX_REPLY))
+    finally:
+        s.close()
+
+
+def line(j):
+    wake = ""
+    if j.get("until"):
+        wake = f" (wakes at /{j['until']}/)"
+    elif j.get("wake"):
+        wake = " (wakes at the end)"
+    return f"[{j['id']}] {j['state']:<9} {span(j['secs']):>7}  {j['cmd']}{wake}"
+
+
+def span(secs):
+    if secs < 60:
+        return f"{secs}s"
+    if secs < 3600:
+        return f"{secs // 60}m{secs % 60:02d}s"
+    return f"{secs // 3600}h{secs % 3600 // 60:02d}m"
+
+
+def tail(n, count):
+    """The last `count` lines of job n's log, from its file and the one
+    before it when the log moved to a new file."""
+    base = os.path.join(os.path.dirname(os.environ.get("FCSH_JOBS", os.path.expanduser("~/.fc/jobs/sock"))), f"{n}.log")
+    lines = []
+    for path in (base, base + ".1"):
+        try:
+            with open(path, "rb") as f:
+                lines = f.read().decode(errors="replace").splitlines() + lines
+        except OSError:
+            if path == base:
+                return None
+        if len(lines) >= count:
+            break
+    return lines[-count:] if count else []
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__.split("\n\n", 1)[1])
+        return 0 if argv else 1
+    op, args = argv[0], argv[1:]
+    try:
+        if op == "run":
+            wake, until = False, None
+            while args and args[0].startswith("--"):
+                a = args.pop(0)
+                if a == "--":
+                    break
+                if a == "--wake":
+                    wake = True
+                elif a == "--until" and args:
+                    until = args.pop(0)
+                elif a.startswith("--until="):
+                    until = a[len("--until="):]
+                else:
+                    print(f"job: no option {a}\n{USAGE}", file=sys.stderr)
+                    return 2
+            if not args:
+                print(f"job: give a command\n{USAGE}", file=sys.stderr)
+                return 2
+            cmd = args[0] if len(args) == 1 else shlex.join(args)
+            r = ask({"run": {"cmd": cmd, "cwd": os.getcwd(), "wake": wake, "until": until}})
+            if "ok" in r:
+                print(f"[{r['ok']['id']}] {r['ok']['pid']}")
+        elif op == "ls" and not args:
+            r = ask({"ls": {}})
+            if "ok" in r:
+                for j in r["ok"]:
+                    print(line(j))
+        elif op == "tail" and 1 <= len(args) <= 2 and all(a.isdigit() for a in args):
+            lines = tail(int(args[0]), int(args[1]) if len(args) == 2 else 20)
+            if lines is None:
+                print(f"job: no job {args[0]}", file=sys.stderr)
+                return 1
+            for x in lines:
+                print(x)
+            return 0
+        elif op == "kill" and len(args) == 1 and args[0].isdigit():
+            r = ask({"kill": {"id": int(args[0])}})
+        else:
+            print(USAGE, file=sys.stderr)
+            return 2
+    except OSError as e:
+        print(f"job: the jobs of this shell do not answer ({e.strerror or e})", file=sys.stderr)
+        return 1
+    except ValueError:
+        print("job: the jobs of this shell gave no answer", file=sys.stderr)
+        return 1
+    if "error" in r:
+        print(f"job: {r['error']}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

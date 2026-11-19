@@ -1,0 +1,44 @@
+# ceshd runs the site's shells' cesh commands (ces docs/ceshd.md), each in a
+# child that confines itself with Landlock to the system libraries and its
+# home, with no TCP. Only the bridge (group ceshd) connects, since a request
+# holds a person's key. The children speak UDP to CES servers, so this unit
+# keeps them off loopback, which this host's servers trust, except the DNS
+# stub.
+[Unit]
+Description=fc ceshd (runs the cesh commands of the shells, each in a confined child)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=ceshd
+Group=ceshd
+UMask=0077
+RuntimeDirectory=ceshd
+RuntimeDirectoryMode=0750
+StateDirectory=ceshd ceshd/homes ceshd/scratch
+StateDirectoryMode=0700
+Environment=LD_LIBRARY_PATH=/opt/fc/ceshd
+ExecStart=/opt/fc/ceshd/ceshd --socket /run/ceshd/ceshd.sock --socket-mode 660 \
+  --homes /var/lib/ceshd/homes --scratch /var/lib/ceshd/scratch \
+  --timeout 3600 --cpu 120 --mem-mb 1024 --file-mb 8 --home-mb 32 --max-running 48
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectProc=invisible
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+IPAddressDeny=localhost link-local multicast
+IPAddressAllow=127.0.0.53
+MemoryMax=4G
+TasksMax=1024
+
+[Install]
+WantedBy=multi-user.target

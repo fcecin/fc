@@ -1,0 +1,3 @@
+WinBox.js 0.2.82 (https://github.com/nextapps-de/winbox), Apache-2.0 (LICENSE).
+The split build: winbox.min.js and winbox.min.css, unchanged. The bundle
+injects a <style> element, which the CSP of fc blocks; this build does not.

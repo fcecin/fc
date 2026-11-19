@@ -1,0 +1,30 @@
+[Unit]
+Description=fc hub (gives each change to the open pages)
+After=network-online.target fc-shelld.service
+Wants=fc-shelld.service
+
+[Service]
+User=fc
+Group=fc
+WorkingDirectory=/opt/fc/app
+EnvironmentFile=/etc/fc/fc.env
+# The site sends changes on /run/fc-hub/hub.sock, and pages connect to
+# 127.0.0.1:8001 through Caddy (/hub). The hub listens for each person's shell
+# unit in /run/fc-shells/u<uid>, and runs its cesh commands through the
+# bridge's cesh socket.
+Environment=FC_HUB_SOCKET=/run/fc-hub/hub.sock FC_HUB_BIND=127.0.0.1:8001 FC_CESH_SOCKET=/run/fc/cesh.sock
+Environment=FC_SHELLD=/run/fc-shelld/shelld.sock
+ReadWritePaths=-/run/fc-shells
+RuntimeDirectory=fc-hub
+RuntimeDirectoryMode=0750
+ExecStart=/opt/fc/venv/bin/python -m fc.hub
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectProc=invisible
+
+[Install]
+WantedBy=multi-user.target

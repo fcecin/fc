@@ -1,0 +1,5 @@
+@xterm/xterm 6.0.0 (lib/xterm.js, css/xterm.css) and @xterm/addon-fit 0.11.0
+(lib/addon-fit.js), from npm, MIT (LICENSE). The files are as npm has them,
+less the last line (sourceMappingURL): the maps are not here, and
+collectstatic follows that line. xterm.js makes <style> elements, which the
+CSP of fc blocks; fc/sheets.js gives their text to constructable style sheets.

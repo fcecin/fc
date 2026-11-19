@@ -1,0 +1,15 @@
+{% extends "fc/base.html" %}
+{% block tab %}miner{% endblock %}
+{% block head_title %}miner | {% instance %}{% endblock %}
+{% block content %}
+<section class="panel miner">
+  <h2>miner</h2>
+  <p>Credit pays for what you do here: the assistant's answers, and your files and programs on the network. The fc miner earns credit with this computer's CPU, and sends it to your handle on {% instance %}.</p>
+  <ul class="downloads">
+    {% for b in builds %}<li><a class="button{% if b.os == mine %} primary{% endif %}" href="{{ b.url }}">{{ b.name }}</a> <span class="fine">{{ b.arch }}</span></li>
+    {% endfor %}
+  </ul>
+  <p>Start it and type your handle. TURBO mines on every core, PAUSE stops, and with HOME off the credit stays in the miner's own key.</p>
+  <p class="fine">The builds are unsigned, so your system may ask you to confirm the first start. <a href="{{ sums }}">SHA256SUMS</a></p>
+</section>
+{% endblock %}

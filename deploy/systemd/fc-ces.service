@@ -1,0 +1,24 @@
+[Unit]
+Description=fc ledger (the CES server of this installation; builtin:think on, compute and file store off)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=fc-keys
+Group=fc-keys
+WorkingDirectory=/var/lib/fc-ces
+Environment=LD_LIBRARY_PATH=/opt/fc/ces
+ExecStart=/opt/fc/ces/ces --config /etc/fc/ces.toml
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/fc-ces
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

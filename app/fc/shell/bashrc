@@ -1,0 +1,34 @@
+# The rcfile of an fc shell, which ptyhost.py starts bash with. It runs the
+# person's ~/.bashrc, then adds the hidden OSC 133 marks that the site reads,
+# as a terminal's shell integration does: A and B around the prompt, C when a
+# command starts, and D with its exit code when it ends.
+#
+# The assistant types its commands at this prompt as the person would. Before
+# that, the key \e[9998~ sets aside the line that the person typed (mark L
+# with its length), and after the command \e[9997~ gives it back.
+
+[ -f ~/.bashrc ] && . ~/.bashrc
+
+__fc_mark() {
+  local s=$?
+  printf '\e]133;D;%s\a\e]133;A\a' "$s"
+  return $s
+}
+PROMPT_COMMAND="__fc_mark${PROMPT_COMMAND:+; $PROMPT_COMMAND}"
+PS0='\e]133;C\a'"${PS0}"
+PS1="${PS1}"'\[\e]133;B\a\]'
+
+__fc_take() {
+  printf '\e]133;L;%s\a' "${#READLINE_LINE}"
+  __fc_line=$READLINE_LINE
+  READLINE_LINE=
+  READLINE_POINT=0
+}
+__fc_give() {
+  READLINE_LINE=$__fc_line
+  READLINE_POINT=${#READLINE_LINE}
+  __fc_line=
+}
+bind -x '"\e[9998~": __fc_take'
+bind -x '"\e[9997~": __fc_give'
+bind 'set enable-active-region off'

@@ -1,0 +1,27 @@
+[Unit]
+Description=fc web app (Django, gunicorn)
+After=fc-bridge.service network-online.target
+Wants=fc-bridge.service
+
+[Service]
+User=fc
+Group=fc
+WorkingDirectory=/opt/fc/app
+EnvironmentFile=/etc/fc/fc.env
+# Threads, since the requests wait on the bridge (a model's answer can take
+# minutes), and the pages' sockets live in fc-hub.
+ExecStart=/opt/fc/venv/bin/gunicorn --workers 3 --threads 8 --timeout 330 --graceful-timeout 330 --bind 127.0.0.1:8000 --access-logfile - --forwarded-allow-ips 127.0.0.1 fcsite.wsgi
+# A reload starts workers with the new code while the old workers finish
+# their requests, since a chat turn can take minutes.
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectProc=invisible
+ReadWritePaths=/var/lib/fc
+
+[Install]
+WantedBy=multi-user.target

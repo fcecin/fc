@@ -1,0 +1,27 @@
+[Unit]
+Description=fc stats (writes the report of the site to /run/fc-stats)
+After=fc-hub.service
+Wants=fc-hub.service
+
+[Service]
+Type=simple
+User=fc
+Group=fc
+WorkingDirectory=/opt/fc/app
+EnvironmentFile=/etc/fc/fc.env
+ExecStart=/opt/fc/venv/bin/python manage.py fc_stats
+Restart=always
+RestartSec=5
+# The report lives in memory, where the app reads it.
+RuntimeDirectory=fc-stats
+RuntimeDirectoryMode=0755
+Nice=10
+MemoryMax=256M
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/fc
+
+[Install]
+WantedBy=multi-user.target

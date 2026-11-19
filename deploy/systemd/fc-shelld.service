@@ -1,0 +1,16 @@
+# Starts and stops every person's shell unit (fcsh-u<uid>.service) as root,
+# for the hub (app/fc/shell/shelld.py), in fc-shells.slice.
+[Unit]
+Description=fc shells (starts the shell of each person)
+After=network-online.target
+
+[Service]
+Environment=FCSHELLD_SOCKET=/run/fc-shelld/shelld.sock FCSHELLD_PEER=fc
+RuntimeDirectory=fc-shelld
+RuntimeDirectoryMode=0755
+ExecStart=/usr/bin/python3 /opt/fc/app/fc/shell/shelld.py
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

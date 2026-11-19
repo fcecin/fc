@@ -1,0 +1,113 @@
+#!/usr/bin/python3
+"""cesh in the shell: the hub runs the command as the person, with this
+process's stdin, stdout and stderr (wire.py). The key of the person stays
+out of the shell. Ctrl+C ends this process, and the hub stops the command.
+
+The command runs out of the shell, so a path of the shell means nothing to
+it. This process opens the local files of `file put` and `file get` and
+gives them to the command as its stdin or stdout, and it gives a `file:`
+memo as hex."""
+
+import json
+import os
+import signal
+import socket
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
+import wire  # noqa: E402
+
+
+# The cesh options that take no value, while every other option takes one.
+FLAGS = {"-c", "--cache-only", "--extsign", "--hex", "--immutable", "--nonceless", "--off", "--open",
+         "--owner-pays", "-p", "--parse-only", "--private", "--public", "-q", "--quiet", "--secp",
+         "--secrets", "--trace", "-v", "--verbose", "--wait", "-h", "--help", "--help-all", "--version"}
+MAX_MEMO = 64 * 1024
+
+
+class LocalError(Exception):
+    pass
+
+
+def localize(args):
+    """(args, stdin, stdout) for the command: the files of the shell that it
+    reads or writes, open here, and the args that name "-" for them."""
+    args = list(args)
+    words, i = [], 0
+    while i < len(args):
+        a = args[i]
+        if a.startswith("-") and a != "-":
+            if a in ("--in",) and i + 1 < len(args):
+                args[i + 1] = memo(args[i + 1])
+            elif a.startswith("--in="):
+                args[i] = "--in=" + memo(a[5:])
+            step = 1 if ("=" in a or a in FLAGS or (len(a) > 2 and a[1] != "-")) else 2
+            i += step
+            continue
+        words.append(i)
+        i += 1
+    stdin = stdout = None
+    cmd = [args[w] for w in words[:2]]
+    try:
+        if cmd == ["file", "put"] and len(words) >= 3 and args[words[2]] != "-":
+            stdin = open(args[words[2]], "rb")
+            args[words[2]] = "-"
+        elif cmd == ["file", "get"] and len(words) >= 4 and args[words[3]] != "-":
+            stdout = open(args[words[3]], "wb")
+            args[words[3]] = "-"
+    except OSError as e:
+        raise LocalError(f"{e.filename}: {e.strerror}")
+    return args, stdin, stdout
+
+
+def memo(value):
+    """A `file:path` memo as hex, read here."""
+    if not value.startswith("file:"):
+        return value
+    path = value[5:]
+    try:
+        with open(path, "rb") as f:
+            data = f.read(MAX_MEMO + 1)
+    except OSError as e:
+        raise LocalError(f"{path}: {e.strerror}")
+    if len(data) > MAX_MEMO:
+        raise LocalError(f"{path}: a memo is {MAX_MEMO} bytes at most")
+    return "hex:" + data.hex()
+
+
+def code(result):
+    """The exit code of a ceshd result, as a shell gives it."""
+    word, _, rest = result.partition(" ")
+    if word == "exit" and rest.isdigit():
+        return int(rest)
+    if word == "signal" and rest.isdigit():
+        return 128 + int(rest)
+    print(f"cesh: {rest if word == 'error' else result}", file=sys.stderr)
+    return 1
+
+
+def main():
+    signal.signal(signal.SIGINT, lambda *_: os._exit(130))
+    try:
+        args, stdin, stdout = localize(sys.argv[1:])
+    except LocalError as e:
+        print(f"cesh: {e}", file=sys.stderr)
+        return 1
+    fds = [stdin.fileno() if stdin else 0, stdout.fileno() if stdout else 1, 2]
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+    try:
+        s.connect(os.environ.get("FCSH_SOCKET", wire.SOCKET))
+        socket.send_fds(s, [wire.hello(kind="cesh", args=args)], fds)
+        msg = s.recv(wire.MAX_MSG)
+    except OSError as e:
+        print(f"cesh: the site does not answer ({e.strerror or e})", file=sys.stderr)
+        return 1
+    try:
+        return code(json.loads(msg)["result"])
+    except (ValueError, KeyError, TypeError):
+        print("cesh: the site did not give a result", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

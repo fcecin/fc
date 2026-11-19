@@ -1,0 +1,11 @@
+{% extends "fc/base.html" %}
+{% block tab %}account{% endblock %}
+{% block content %}
+<form class="application" method="post" action="{% url 'choose_handle' %}">
+  {% csrf_token %}
+  <label for="id_handle">handle</label>
+  <div class="prefixed"><span class="prefix">{{ request.get_host }}/</span><input id="id_handle" name="handle" required minlength="2" maxlength="32" autocomplete="username" spellcheck="false" autofocus></div>
+  {% if error %}<p class="field-error">{{ error }}</p>{% endif %}
+  <div class="actions"><button class="primary" type="submit">ok</button></div>
+</form>
+{% endblock %}

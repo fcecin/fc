@@ -1,0 +1,38 @@
+#!/usr/bin/python3
+"""desk in the shell: one op on the desk of the person (desk help lists the
+ops). The hub gives the op to the site (wire.py)."""
+
+import json
+import os
+import shlex
+import socket
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), ".."))
+import wire  # noqa: E402
+
+
+def main():
+    op = shlex.join(sys.argv[1:])
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+    try:
+        s.connect(os.environ.get("FCSH_SOCKET", wire.SOCKET))
+        s.send(wire.hello(kind="desk", op=op))
+        r = json.loads(s.recv(wire.MAX_MSG))
+    except OSError as e:
+        print(f"desk: the site does not answer ({e.strerror or e})", file=sys.stderr)
+        return 1
+    except ValueError:
+        print("desk: the site did not give an answer", file=sys.stderr)
+        return 1
+    if "error" in r:
+        print(f"desk: {r['error']}", file=sys.stderr)
+        return 1
+    out = r.get("out") or ""
+    if out:
+        print(out)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

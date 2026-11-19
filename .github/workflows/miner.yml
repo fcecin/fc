@@ -1,0 +1,204 @@
+# The fc miner (miner/) for Linux, macOS and Windows, linked static into one
+# executable per system (in a .app on macOS). Each job checks that the
+# executable needs only what the system has, and keeps it as an artifact.
+#
+# Windows uses MSYS2's static Qt (UCRT64), and Linux and macOS build a static
+# qtbase once, which the cache keeps by version. ces comes from GitHub at
+# CES_TAG (miner/CMakeLists.txt), and the installation from the repository
+# variables FC_SITE and FC_MINE_SERVER. A tag miner-v<version> also makes a
+# GitHub Release with the three executables, once all three pass.
+name: miner
+
+on:
+  push:
+    branches: [main]
+    tags: ["miner-v*"]
+    paths: ["miner/**", ".github/workflows/miner.yml"]
+  pull_request:
+    paths: ["miner/**", ".github/workflows/miner.yml"]
+  workflow_dispatch:
+
+env:
+  # The same version as MSYS2's static Qt.
+  QT_VERSION: "6.12.0"
+
+# One run at a time, so a second run waits and then finds the first one's
+# static Qt in the cache.
+concurrency:
+  group: miner
+  cancel-in-progress: false
+
+jobs:
+  linux:
+    name: linux
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deps
+        timeout-minutes: 10
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config libboost-dev libboost-log-dev libboost-stacktrace-dev libssl-dev \
+            libgl-dev libegl-dev libfontconfig1-dev libfreetype-dev libxkbcommon-dev libxkbcommon-x11-dev \
+            libx11-dev libx11-xcb-dev libxext-dev libxrender-dev libxi-dev \
+            libxcb1-dev libxcb-cursor-dev libxcb-glx0-dev libxcb-icccm4-dev libxcb-image0-dev \
+            libxcb-keysyms1-dev libxcb-randr0-dev libxcb-render-util0-dev libxcb-shape0-dev \
+            libxcb-shm0-dev libxcb-sync-dev libxcb-util-dev libxcb-xfixes0-dev libxcb-xinerama0-dev \
+            libxcb-xkb-dev libxcb-xinput-dev
+      - name: Static Qt (cache)
+        id: qt
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/qt6-static
+          key: qt-${{ env.QT_VERSION }}-static-linux-v2
+      - name: Static Qt (build)
+        if: steps.qt.outputs.cache-hit != 'true'
+        run: |
+          V=$QT_VERSION; M=${V%.*}
+          curl -sSL https://download.qt.io/official_releases/qt/$M/$V/submodules/qtbase-everywhere-src-$V.tar.xz | tar xJ
+          cd qtbase-everywhere-src-$V
+          ./configure -static -release -prefix $HOME/qt6-static -nomake examples -nomake tests \
+            -openssl-linked -no-dbus -xcb -no-feature-sql -no-icu -qt-pcre -- -DOPENSSL_USE_STATIC_LIBS=ON
+          cmake --build . --parallel
+          cmake --install .
+      - name: Static Qt (save)
+        if: steps.qt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/qt6-static
+          key: qt-${{ env.QT_VERSION }}-static-linux-v2
+      - name: Build
+        run: |
+          cmake -S miner -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFC_STATIC=ON -DFC_SITE="${{ vars.FC_SITE }}" -DFC_MINE_SERVER="${{ vars.FC_MINE_SERVER }}" -DCMAKE_PREFIX_PATH=$HOME/qt6-static
+          cmake --build build --target fc-miner fc-miner-test
+          ctest --test-dir build --output-on-failure
+      - name: Check (only the libraries of the system)
+        run: |
+          ldd build/fc-miner | tee deps.txt
+          if grep -Ei "libQt|libboost|libstdc\+\+|libssl|libcrypto|libicu|libpcre2" deps.txt; then echo "not static"; exit 1; fi
+          strip build/fc-miner
+          mkdir -p out && cp build/fc-miner out/fc-miner && chmod +x out/fc-miner
+          tar -C out -czf fc-miner-linux-x86_64.tar.gz fc-miner
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fc-miner-linux
+          path: fc-miner-linux-x86_64.tar.gz
+
+  macos:
+    name: macos
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deps
+        timeout-minutes: 10
+        run: brew install ninja boost
+      - name: Static Qt (cache)
+        id: qt
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/qt6-static
+          key: qt-${{ env.QT_VERSION }}-static-macos-v1
+      - name: Static Qt (build)
+        if: steps.qt.outputs.cache-hit != 'true'
+        run: |
+          V=$QT_VERSION; M=${V%.*}
+          curl -sSL https://download.qt.io/official_releases/qt/$M/$V/submodules/qtbase-everywhere-src-$V.tar.xz | tar xJ
+          cd qtbase-everywhere-src-$V
+          ./configure -static -release -prefix $HOME/qt6-static -nomake examples -nomake tests -no-feature-sql
+          cmake --build . --parallel
+          cmake --install .
+      - name: Static Qt (save)
+        if: steps.qt.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/qt6-static
+          key: qt-${{ env.QT_VERSION }}-static-macos-v1
+      - name: Build
+        run: |
+          cmake -S miner -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFC_STATIC=ON -DFC_SITE="${{ vars.FC_SITE }}" -DFC_MINE_SERVER="${{ vars.FC_MINE_SERVER }}" -DCMAKE_PREFIX_PATH=$HOME/qt6-static
+          cmake --build build --target fc-miner
+      - name: Check (only the frameworks of the system)
+        run: |
+          otool -L build/fc-miner.app/Contents/MacOS/fc-miner | tee deps.txt
+          if tail -n +2 deps.txt | grep -Ev "^\s*(/System/Library/|/usr/lib/)"; then echo "not static"; exit 1; fi
+          strip build/fc-miner.app/Contents/MacOS/fc-miner
+          # The strip breaks the linker's ad-hoc signature, and Apple silicon
+          # runs only signed code.
+          codesign --force --deep --sign - build/fc-miner.app
+          codesign --verify --deep --strict build/fc-miner.app
+          ditto -c -k --keepParent build/fc-miner.app fc-miner-macos-arm64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fc-miner-macos
+          path: fc-miner-macos-arm64.zip
+
+  windows:
+    name: windows
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: msys2/setup-msys2@v2
+        timeout-minutes: 15
+        with:
+          msystem: UCRT64
+          update: true
+          install: >-
+            git
+            mingw-w64-ucrt-x86_64-gcc
+            mingw-w64-ucrt-x86_64-cmake
+            mingw-w64-ucrt-x86_64-ninja
+            mingw-w64-ucrt-x86_64-boost
+            mingw-w64-ucrt-x86_64-qt6-static
+            mingw-w64-ucrt-x86_64-vulkan-headers
+            mingw-w64-ucrt-x86_64-freetype
+            mingw-w64-ucrt-x86_64-libjpeg-turbo
+            mingw-w64-ucrt-x86_64-libpng
+            mingw-w64-ucrt-x86_64-libtiff
+            mingw-w64-ucrt-x86_64-libwebp
+            mingw-w64-ucrt-x86_64-openssl
+            mingw-w64-ucrt-x86_64-pcre2
+            mingw-w64-ucrt-x86_64-zlib
+            mingw-w64-ucrt-x86_64-zstd
+            mingw-w64-ucrt-x86_64-brotli
+            mingw-w64-ucrt-x86_64-bzip2
+            mingw-w64-ucrt-x86_64-pkgconf
+      - name: Build
+        run: |
+          cmake -S miner -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DFC_STATIC=ON -DFC_SITE="${{ vars.FC_SITE }}" -DFC_MINE_SERVER="${{ vars.FC_MINE_SERVER }}" -DCMAKE_PREFIX_PATH=/ucrt64/qt6-static
+          cmake --build build --target fc-miner
+      - name: Check (only the DLLs of Windows)
+        run: |
+          ldd build/fc-miner.exe | tee deps.txt
+          if grep -i "/ucrt64/" deps.txt; then echo "not static"; exit 1; fi
+          strip build/fc-miner.exe
+          cp build/fc-miner.exe fc-miner-windows-x86_64.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fc-miner-windows
+          path: fc-miner-windows-x86_64.exe
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/miner-v')
+    needs: [linux, macos, windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          sha256sum fc-miner-* > SHA256SUMS
+          cat SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "fc miner ${GITHUB_REF_NAME#miner-v}" \
+            --notes "The fc miner for Linux (x86-64), macOS (Apple silicon) and Windows (x86-64). SHA256SUMS has the checksums." \
+            fc-miner-linux-x86_64.tar.gz fc-miner-macos-arm64.zip fc-miner-windows-x86_64.exe SHA256SUMS

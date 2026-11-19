@@ -1,0 +1,104 @@
+DESK(7)                                                                  DESK(7)
+
+NAME
+     desk - the ops that see and change a person's desktop
+
+DESCRIPTION
+     The desktop is a set of windows that the site keeps, and every open
+     page shows it. Every change is an op, and a drag, a "desk <op>" line in
+     the shell and the assistant all use the same ops.
+
+     Every desktop has a chat window (the conversation with the assistant)
+     and a shell window (a terminal on the person's bash on the site, where
+     cesh and desk run). These two move, resize and fold, and always stay. A
+     "text" window shows a title and a text. A "program" window is a
+     monitor on a CES program, which the page dials as the person.
+
+READ
+     ls                        the windows: name, kind, place, size, title
+     show <name>               all of one window
+     screen                    the desktop's size, as the page reports it
+     help                      the ops, briefly
+     man                       this manual
+     vs1                       the docs of VS1, which a program loads with
+                               ces.load("vs1/vs1.lua") to draw on its window
+                               and read the person's keys
+     look <name> [<x1> <y1> <x2> <y2>]
+                               the text on a program window, or only the
+                               cells from x1,y1 to x2,y2 (from 1)
+     grid <name> [<x1> <y1> <x2> <y2>]
+                               the same, with numbered rows and a column ruler
+     tail shell [<n>]          the last n characters the shell printed, with
+                               no escape codes (2000, at most 20000)
+
+     When a conversation starts, and whenever the desk changed since the
+     assistant last saw it, the chat gives the assistant the desk as it is
+     now ("the desk now").
+
+INPUT
+     These send input as the person, on the person's open page.
+
+     press <name> <key>[:<ms>] ...
+                               press keys: each a key down, and a key up ms
+                               later (30). Keys have the browser's names: a,
+                               A, Space, Enter, ArrowLeft. In the shell, the
+                               keys go to the running command: Enter, Tab,
+                               Backspace, Escape, the arrows, Ctrl+c.
+     click <name> <x> <y> [<button>]
+                               click cell x,y of a program window (from 1, as
+                               look and grid count): a press, and its release
+                               30 ms later. The button is 0, the left one,
+                               by default.
+     type <name> "<text>"      send text: to a program window as one text
+                               event, or to the command running in the
+                               shell. \n is Enter.
+
+OPS
+     new text <name> "<text>" [title "<t>"] [at <x> <y>] [size <w> <h>]
+                               a text window. The title is the name by
+                               default, and it opens at 60 60, 360 by 200.
+     set <name> title "<t>"    change the title
+     set <name> text "<t>"     change a text window's text
+     move <name> <x> <y>       put the window at x,y, in pixels from the top
+                               left
+     size <name> <w> <h>       resize the window, to at least 200 by 100
+     fold <name>               fold the window to its title bar
+     unfold <name>             open it again
+     new program <name> <pid> [on <server>] [title "<t>"] [at <x> <y>] [size <w> <h>]
+                               a window on anyone's running program <pid>
+                               (cesh compute stat <pid> checks it), on the
+                               person's server or on <server>. The program
+                               draws character cells with VS1 (desk vs1) and
+                               sends every viewer whole frames, which the
+                               window scales to fit. The person's keys,
+                               pointer and focus go to the program as
+                               events. It opens at 80 80, 560 by 420.
+     del <name>                delete a window, all but the chat and the shell
+     run shell "<op>"          run a desk op in the shell, as if typed there,
+                               so the op and its output show in the shell.
+                               "clear" empties the shell.
+
+     A name is 1 to 40 lowercase letters, digits, "-" or "_". Put a word
+     with spaces in double quotes, with \" for a quote and \\ for a
+     backslash.
+
+LIMITS
+     A desktop holds 20 windows, the chat and the shell included. A text, a
+     desk op in the shell and its output hold 4000 characters each, and a
+     title 80. The shell window keeps its newest 5000 lines, and the chat
+     its newest 1000. The ops are free.
+
+EXAMPLES
+     ls
+     show milk
+     look game
+     look game 1 1 40 3
+     grid game
+     press game ArrowRight ArrowRight:600
+     type shell "hello\n"
+     tail shell 500
+     new text milk "buy milk" title "today"
+     set milk text "buy milk and eggs"
+     move milk 400 120
+     run shell "ls"
+     del milk

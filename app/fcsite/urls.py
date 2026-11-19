@@ -1,0 +1,30 @@
+from django.urls import path
+
+from fc import api, enter, views
+
+urlpatterns = [
+    path("", views.home, name="home"),
+    path("net", views.network, name="net"),
+    path("key", views.key_of, name="key_of"),
+    path("stats", views.stats_page, name="stats"),
+    path("stats.txt", views.stats_text, name="stats_text"),
+    path("key/<str:handle>", views.handle_key, name="handle_key"),
+    path("ledger", views.ledger, name="ledger"),
+    path("miner", views.miner, name="miner"),
+    path("account/", views.account, name="account"),
+    path("account/handle", views.choose_handle, name="choose_handle"),
+    path("account/key", views.export_key, name="export_key"),
+    path("enter", enter.enter, name="enter"),
+    path("enter/code", enter.enter_code, name="enter_code"),
+    path("leave", enter.leave, name="leave"),
+    path("api/me", api.me),
+    path("api/hub", api.hub),
+    path("api/hub/desk", api.hub_desk),
+    path("api/hub/wake", api.hub_wake),
+    path("api/desk", api.desk),
+    path("api/chat", api.chat),
+    path("api/chat/new", api.chat_new),
+    path("api/net", api.network),
+    path("api/send", api.send),
+    path("api/move", api.move),
+]

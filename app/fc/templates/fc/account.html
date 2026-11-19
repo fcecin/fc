@@ -1,0 +1,17 @@
+{% extends "fc/base.html" %}
+{% block tab %}account{% endblock %}
+{% block head_title %}{{ profile.handle }} | {% instance %}{% endblock %}
+{% block content %}
+<section class="panel">
+  <h2>{{ profile.handle|default:"-" }}</h2>
+</section>
+<section class="panel">
+  <h2>key</h2>
+  <p class="fine"><code>{{ profile.pubkey }}</code></p>
+  <p><a href="{% url 'export_key' %}">export the private key</a></p>
+</section>
+<section class="panel leave">
+  <form method="post" action="{% url 'leave' %}">{% csrf_token %}<button type="submit">log out</button></form>
+  <p class="fine">Logging out deletes your shell's home.</p>
+</section>
+{% endblock %}

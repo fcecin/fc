@@ -1,0 +1,6 @@
+{% extends "fc/base.html" %}
+{% block tab %}stats{% endblock %}
+{% block head_title %}stats | {% instance %}{% endblock %}
+{% block content %}
+{% if stats %}<pre class="stats">{{ stats }}</pre>{% else %}<p class="stats">no stats now</p>{% endif %}
+{% endblock %}

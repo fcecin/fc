@@ -1,0 +1,17 @@
+{% extends "fc/base.html" %}
+{% block tab %}account{% endblock %}
+{% block content %}
+<section class="entry">
+  {% if email %}
+  <form method="post" action="{% url 'enter_code' %}">
+    {% csrf_token %}
+    <p>A code went to <strong>{{ email }}</strong>.</p>
+    <label for="id_code">code</label>
+    <input id="id_code" name="code" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" required autofocus>
+    <button class="primary" type="submit">enter</button>
+  </form>
+  {% endif %}
+  {% if error %}<p class="field-error">{{ error }}</p>{% endif %}
+  <p class="fine"><a href="/">another email</a></p>
+</section>
+{% endblock %}

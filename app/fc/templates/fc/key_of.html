@@ -1,0 +1,17 @@
+{% extends "fc/base.html" %}
+{% block tab %}key{% endblock %}
+{% block head_title %}key{% if handle %} of {{ handle }}{% endif %} | {% instance %}{% endblock %}
+{% block content %}
+<section class="panel key-of">
+  <form class="inline" method="get" action="{% url 'key_of' %}">
+    <input name="handle" value="{{ handle }}" placeholder="handle" aria-label="handle" maxlength="40"
+      autocomplete="off" autocapitalize="none" spellcheck="false" required autofocus>
+    <button type="submit">key</button>
+  </form>
+  {% if handle %}
+  {% if key %}<dl class="facts"><dt>{{ handle }}</dt><dd><code>{{ key }}</code></dd></dl>
+  {% else %}<p class="field-error">no such handle: {{ handle }}</p>{% endif %}
+  <p class="fine"><code>GET <a href="/key/{{ handle|urlencode:'' }}">/key/{{ handle }}</a></code></p>
+  {% endif %}
+</section>
+{% endblock %}

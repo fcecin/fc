@@ -1,0 +1,27 @@
+[Unit]
+Description=fc bridge (keys, signing, CES traffic)
+After=fc-ces.service fc-ceshd.service network-online.target
+Wants=fc-ces.service fc-ceshd.service network-online.target
+
+[Service]
+User=fc-keys
+Group=fc
+# ceshd's socket is for its group only.
+SupplementaryGroups=ceshd
+UMask=0007
+RuntimeDirectory=fc
+RuntimeDirectoryMode=0750
+EnvironmentFile=/etc/fc/bridge.env
+Environment=LD_LIBRARY_PATH=/opt/fc/bridge
+ExecStart=/opt/fc/bridge/fc-bridge --socket /run/fc/bridge.sock --master-key /etc/fc/master.key --ledger ${FC_LEDGER} --home ${FC_HOME} --home-key /etc/fc/ces.toml --grants-file /var/lib/fc-keys/grants.txt --reader-key /etc/fc/reader.key --grant-amount ${FC_GRANT} --ceshd /run/ceshd/ceshd.sock --cesh-socket /run/fc/cesh.sock
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ReadWritePaths=/var/lib/fc-keys
+ProtectProc=invisible
+
+[Install]
+WantedBy=multi-user.target

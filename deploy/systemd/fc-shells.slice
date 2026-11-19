@@ -1,0 +1,9 @@
+# All the people's shells (app/fc/shell/shelld.py), each with its own limits,
+# and these bound the sum.
+[Unit]
+Description=fc shells
+
+[Slice]
+MemoryMax=12G
+TasksMax=4096
+CPUQuota=400%

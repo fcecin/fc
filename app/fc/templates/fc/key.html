@@ -1,0 +1,14 @@
+{% extends "fc/base.html" %}
+{% block tab %}account{% endblock %}
+{% block content %}
+<section class="panel">
+  <h2>key</h2>
+  <dl class="facts"><dt>public</dt><dd><code>{{ profile.pubkey }}</code></dd></dl>
+  {% if private %}
+    <p class="secret"><code>{{ private }}</code></p>
+  {% else %}
+    <form method="post">{% csrf_token %}<input type="hidden" name="confirm" value="yes"><button class="primary" type="submit">show private key</button></form>
+    {% if error %}<p class="field-error">{{ error }}</p>{% endif %}
+  {% endif %}
+</section>
+{% endblock %}

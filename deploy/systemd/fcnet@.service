@@ -1,0 +1,20 @@
+# One fc network server, fcnet@net1 to fcnet@netN. ces runs as root so that
+# each Lua child can drop to the cesluad user (compute_user), with no io, os
+# or ffi, and a hard memory limit.
+[Unit]
+Description=fc network server %i (CES, compute on)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/var/lib/fcnet/%i
+Environment=LD_LIBRARY_PATH=/opt/fcnet/bin
+ExecStart=/opt/fcnet/bin/ces --config /etc/fcnet/%i.toml
+KillSignal=SIGTERM
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

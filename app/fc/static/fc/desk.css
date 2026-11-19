@@ -1,0 +1,70 @@
+/* The desktop windows. This sheet loads after WinBox's own, so it wins. */
+.winbox.fc-window {
+  background: var(--ink-0); border-radius: 0; box-shadow: 5px 5px 0 rgba(37, 26, 71, .55);
+}
+.winbox.fc-window.focus { box-shadow: 5px 5px 0 var(--magenta); }
+.winbox.fc-window .wb-header { height: 32px; line-height: 32px; }
+.winbox.fc-window .wb-title { font: bold 13px/32px var(--code); color: var(--paper); padding-left: 10px; letter-spacing: .02em; }
+.winbox.fc-window .wb-body { top: 32px; background: rgba(255, 250, 243, .94); color: var(--ink-0); }
+.winbox.fc-window .wb-control * { width: 30px; }
+.winbox.fc-window .wb-control *:hover { background-color: rgba(255, 179, 71, .35); }
+/* A folded window sits on the bottom edge, as a title bar. */
+.winbox.fc-window.min { box-shadow: 3px 3px 0 rgba(37, 26, 71, .55); }
+/* A text window: its text, as written. */
+.text-widget { padding: 12px 14px; white-space: pre-wrap; overflow-wrap: anywhere; font: 15px/1.5 var(--ui); color: var(--ink-0); }
+/* The shell: a terminal (xterm.js) that fills the window. */
+.winbox.fc-window.fc-shell .wb-body { background: rgba(26, 16, 52, .96); color: #c9f7e8; }
+.shell-widget { position: absolute; inset: 6px 4px 4px 10px; }
+.shell-widget .xterm { height: 100%; }
+.shell-widget .xterm-viewport { background: transparent !important; }
+/* A program window (fc/program.js): the stage holds the program's grid in
+   its middle, at 1x or 2x, and the HUD under it shows the link. */
+.winbox.fc-window.fc-program .wb-body { background: rgba(26, 16, 52, .96); overflow: hidden; }
+.program-widget { position: absolute; inset: 0; display: flex; flex-direction: column; }
+.program-stage { position: relative; flex: 1 1 auto; min-height: 0; margin: 6px 6px 0;
+  display: flex; align-items: center; justify-content: center; }
+.program-screen { display: block; outline: none; box-shadow: 0 0 0 1px rgba(255, 140, 26, .28), 0 0 18px rgba(255, 106, 0, .12); }
+/* The HUD. The link state is green when live and red when down. */
+.program-hud { position: relative; flex: none; padding: 5px 8px;
+  background: linear-gradient(#0b0503, #140804); color: #ffb347; user-select: text;
+  border-top: 3px solid transparent;
+  border-image: repeating-linear-gradient(-45deg, #ff8c1a 0 6px, #0b0503 6px 12px) 3;
+  font: 600 12px/1.3 "Arial Narrow", "Roboto Condensed", "Helvetica Neue", Arial, sans-serif;
+  font-stretch: condensed; font-variant-numeric: tabular-nums; }
+.program-hud .row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; min-width: 0; }
+.program-hud .k { font-size: 9.5px; letter-spacing: .14em; color: #0b0503; background: #ff8c1a;
+  padding: 0 4px; margin-right: 5px; }
+.program-hud .v { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .03em; }
+.program-hud .v.live { color: #6dff8a; text-shadow: 0 0 6px rgba(109, 255, 138, .6); }
+.program-hud .v.dialing { color: #ffd36b; animation: fc-blink 1.1s steps(2) infinite; }
+.program-hud .v.idle { color: #ff3b30; text-shadow: 0 0 6px rgba(255, 59, 48, .6); }
+.program-hud .v.alert { color: #ff3b30; white-space: normal; }
+/* The rest of the HUD opens over the bottom of the grid, and the pointer
+   goes through it to the grid. */
+.program-hud .more { position: absolute; left: 0; right: 0; bottom: calc(100% + 3px); padding: 6px 8px 5px;
+  display: flex; flex-direction: column; gap: 3px; pointer-events: none;
+  background: rgba(11, 5, 3, .88); box-shadow: inset 0 1px 0 rgba(255, 140, 26, .45); }
+.program-hud .more .row + .row { padding-top: 3px; border-top: 1px solid rgba(255, 140, 26, .22); }
+/* The status screen of a program window with no picture (dialing, no frames,
+   not VS1, failed or closed), which dims the last frame. */
+.program-status { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 7px; padding: 16px; text-align: center; pointer-events: none;
+  color: #c9f7e8; font: 13px/1.45 var(--code);
+  background: repeating-linear-gradient(0deg, rgba(255, 255, 255, .035) 0 1px, transparent 1px 3px),
+    radial-gradient(ellipse at center, rgba(226, 51, 127, .2), rgba(10, 6, 24, 0) 70%); }
+.program-status[hidden] { display: none; }
+.program-status.over { background-color: rgba(10, 6, 24, .74); }
+.program-status .head { font: bold 22px/1 var(--code); letter-spacing: .2em; color: #ff8fb6;
+  text-shadow: 0 0 8px #e2337f, 2px 0 0 rgba(14, 159, 159, .85), -2px 0 0 rgba(255, 179, 71, .7); }
+.program-status.dialing .head { color: #9fe8d6; text-shadow: 0 0 8px #0e9f9f; animation: fc-blink 1.1s steps(2) infinite; }
+.program-status .why { color: #ffb347; max-width: 46em; }
+.program-status .seen { color: #9fe8d6; white-space: pre; text-align: left; max-width: 100%; overflow: hidden;
+  background: rgba(0, 0, 0, .35); border: 1px dashed rgba(201, 247, 232, .35); padding: 6px 9px; }
+.program-status .code { color: #8b80b8; font-size: 11px; letter-spacing: .05em; }
+.program-status .do { opacity: .85; max-width: 46em; }
+@keyframes fc-blink { 50% { opacity: .35; } }
+.winbox .wb-inspect { background-size: 13px auto; background-position: center; width: 26px; cursor: pointer; }
+/* A folded window keeps its fold button, which unfolds it to its place and
+   size, where WinBox would show maximize instead. */
+.winbox.fc-window.min .wb-min { display: block; }
+.winbox.fc-window.min .wb-header, .winbox.fc-window.min .wb-drag { cursor: pointer; }

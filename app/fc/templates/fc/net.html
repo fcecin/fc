@@ -1,0 +1,11 @@
+{% extends "fc/base.html" %}
+{% block tab %}net{% endblock %}
+{% load static %}
+{% block head_title %}network | {% instance %}{% endblock %}
+{% block body_class %}sky-page{% endblock %}
+{% block scripts %}<script src="{% static 'fc/sky.js' %}" defer></script>{% endblock %}
+{% block content %}
+<canvas class="sky" data-sky aria-label="the server where you are and its neighbors"></canvas>
+<div class="probe" data-probe hidden></div>
+<p class="sky-say" data-sky-say role="status"></p>
+{% endblock %}

@@ -1,0 +1,38 @@
+{% extends "fc/base.html" %}
+{% load static fc %}
+{% block tab %}home{% endblock %}
+{% block body_class %}home{% endblock %}
+{% block scripts %}{% if user.is_authenticated %}
+<link rel="stylesheet" href="{% static 'fc/vendor/winbox/winbox.min.css' %}">
+<link rel="stylesheet" href="{% static 'fc/vendor/xterm/xterm.css' %}">
+<link rel="stylesheet" href="{% static 'fc/desk.css' %}">
+<script src="{% static 'fc/vendor/winbox/winbox.min.js' %}" defer></script>
+<script src="{% static 'fc/sheets.js' %}" defer></script>
+<script src="{% static 'fc/vendor/xterm/xterm.js' %}" defer></script>
+<script src="{% static 'fc/vendor/xterm/addon-fit.js' %}" defer></script>
+<script src="{% static 'fc/term.js' %}" defer></script>
+<script src="{% static 'fc/monitor.js' %}" defer></script>
+<script src="{% static 'fc/program.js' %}" defer></script>
+<script src="{% static 'fc/desk.js' %}" defer></script>
+<script src="{% static 'fc/md.js' %}" defer></script>
+<script src="{% static 'fc/chat.js' %}" defer></script>
+{% endif %}{% endblock %}
+{% block content %}
+{% if not user.is_authenticated %}
+<form class="enter" method="post" action="{% url 'enter' %}">
+  {% csrf_token %}
+  <input name="email" type="email" autocomplete="email" placeholder="email" required aria-label="email">
+  <button class="primary" type="submit">enter</button>
+</form>
+{% if stats %}<pre class="stats">{{ stats }}</pre>{% endif %}
+{% else %}
+<section class="chat" data-chat data-ledger="{% ledger %}" hidden>
+  <div class="chat-lines" data-chat-lines aria-live="polite"></div>
+  <form class="chat-form" data-chat-form>
+    <textarea name="text" rows="1" autocomplete="off" placeholder="say something" aria-label="say something"></textarea>
+    <button class="primary" type="submit">say</button>
+  </form>
+  <p class="chat-status"><span data-chat-status></span> <button class="linkish" type="button" data-chat-new>new conversation</button></p>
+</section>
+{% endif %}
+{% endblock %}
