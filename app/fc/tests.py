@@ -1,5 +1,6 @@
 import hashlib
 import json
+import os
 import re
 from unittest import mock
 
@@ -1280,6 +1281,9 @@ class ChatCesh(Base):
                                   "content": 'ran `cesh query`: exit 0\n{"balance":5}'})
         rules = self.fake.requests[0]["messages"][0]["content"]
         self.assertTrue(rules.endswith("notes."))   # no installation text here
+        # The shells see app/fc/shell at /opt/fcsh.
+        self.assertIn("/opt/fcsh/FC.md", rules)
+        self.assertTrue(os.path.isfile(os.path.join(os.path.dirname(aishell.__file__), "shell", "FC.md")))
         self.assertIn("cat ~/AGENTS.md", rules)
         self.assertIn(Profile.objects.get(user=u).pubkey, rules)
         self.assertIn(NET[0], rules)

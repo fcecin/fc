@@ -23,7 +23,7 @@ Run anything longer than 60 seconds, or a wait for a program, as a background jo
 
 ## Credit, files and programs
 
-The site's ledger holds only credit. Files and programs live on the network servers, so a person first moves credit to a network server, on the site's net face.
+The site's ledger holds only credit. Files and programs live on the network servers, so a person first moves credit to a network server, on the site's network page.
 
 A CES file has a balance that pays for it. This puts a file with 1 credit in its balance:
 
