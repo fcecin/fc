@@ -1,5 +1,7 @@
 """The pages of fc, whose code (static/fc/fc.js) talks to the API."""
 
+import os
+
 from django.conf import settings
 from django.contrib.auth.decorators import login_required
 from django.http import Http404, HttpResponse
@@ -143,6 +145,16 @@ def _system(request):
     if "Linux" in ua and "Android" not in ua:
         return "linux"
     return ""
+
+
+ABOUT = os.path.join(os.path.dirname(__file__), "shell", "FC.md")   # the shells read it at /opt/fcsh/FC.md
+
+
+@require_GET
+def about(request):
+    """What fc is: FC.md, the text that the chat model reads too."""
+    with open(ABOUT, encoding="utf-8") as f:
+        return render(request, "fc/about.html", {"text": f.read()})
 
 
 @require_GET

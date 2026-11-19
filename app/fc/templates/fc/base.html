@@ -20,6 +20,7 @@
     <a class="tab tab-key" href="{% url 'key_of' %}" data-tab="key">key</a>
     {% miner_downloads as miner_url %}{% if miner_url %}<a class="tab tab-miner" href="{% url 'miner' %}" data-tab="miner">miner</a>{% endif %}
     {% if user.is_authenticated %}<a class="tab tab-stats" href="{% url 'stats' %}" data-tab="stats">stats</a>{% endif %}
+    <a class="tab tab-about" href="{% url 'about' %}" data-tab="about">about</a>
   </nav>
   <div class="bar-end">
     <button class="linkish quiet" type="button" data-sound>sound on</button>

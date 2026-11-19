@@ -1,0 +1,9 @@
+{% extends "fc/base.html" %}
+{% load static %}
+{% block tab %}about{% endblock %}
+{% block head_title %}about | {% instance %}{% endblock %}
+{% block scripts %}<script src="{% static 'fc/md.js' %}" defer></script>
+<script src="{% static 'fc/about.js' %}" defer></script>{% endblock %}
+{% block content %}
+<section class="panel about"><div class="md" data-about><pre>{{ text }}</pre></div></section>
+{% endblock %}

@@ -1,5 +1,7 @@
 # fc
 
+The source of fc is at https://github.com/fcecin/fc, and the source of CES is at https://github.com/fcecin/ces. Both are in the public domain.
+
 CES is a network of servers that already runs. Each server keeps a ledger of credit, stores files and runs programs in Lua. The servers settle credit with each other through reserves, and one key is one identity on all of them.
 
 fc is a web page in front of that network. When a person signs in with an email address, the site makes them a CES key and gives them credit on its own ledger. The ledger keeps large reserves with the servers of the network, so this credit moves to any of them. On the same page, an assistant works for the person, with that key and that credit.

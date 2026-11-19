@@ -250,6 +250,16 @@ class Pages(Base):
         self.assertContains(c.get("/net"), "data-sky")
         self.assertContains(c.get("/account/"), u.profile.pubkey)
 
+    def test_the_about_page_shows_fc_md_with_the_source_links(self):
+        r = Client().get("/about")
+        self.assertEqual(r.status_code, 200)
+        for url in ("https://github.com/fcecin/fc", "https://github.com/fcecin/ces"):
+            self.assertContains(r, url)
+        self.assertContains(r, "What a person has")      # FC.md, which the model reads too
+        self.assertContains(r, "fc/about.js")
+        self.assertRegex(r.content.decode(), r'<body [^>]*data-tab="about"')
+        self.assertContains(Client().get("/"), 'data-tab="about"')   # the tab, for visitors too
+
     def test_the_bar_marks_the_page(self):
         u = self.person("ana", server="")
         c = Client()
@@ -258,7 +268,7 @@ class Pages(Base):
         for path, here in (("/", "home"), ("/net", "net"), ("/account/", "account"), ("/account/key", "account")):
             r = c.get(path)
             self.assertRegex(r.content.decode(), f'<body [^>]*data-tab="{here}"', msg=path)
-            for tab in ("home", "net", "account"):
+            for tab in ("home", "net", "account", "about"):
                 self.assertContains(r, f'data-tab="{tab}"', msg_prefix=path)
         home = c.get("/")
         self.assertContains(home, f"<bdi data-me-server>{LEDGER}</bdi>")

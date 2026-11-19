@@ -11,6 +11,7 @@ urlpatterns = [
     path("key/<str:handle>", views.handle_key, name="handle_key"),
     path("ledger", views.ledger, name="ledger"),
     path("miner", views.miner, name="miner"),
+    path("about", views.about, name="about"),
     path("account/", views.account, name="account"),
     path("account/handle", views.choose_handle, name="choose_handle"),
     path("account/key", views.export_key, name="export_key"),
