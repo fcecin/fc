@@ -31,10 +31,9 @@ class Shell:
         """Run one command of the model, with its heredoc lines. Returns
         (kind, text, again), with again True when the model reads the result
         before it goes on, and a failed line sets `failed`."""
-        head, *rest = line.strip("\n").split("\n")
-        head = head.strip()
-        _, end = ceshargs.here(head)
-        if end is not None and (not rest or rest[-1].strip() != end):
+        head = line.strip("\n").split("\n")[0].strip()
+        end = ceshargs.unclosed(line.strip("\n"))
+        if end is not None:
             return self.fail(head, f"`{head}` did not run: its input lines have no end line {end}")
         r = push.ask({"run": {"uid": self.profile.user_id, "line": line.strip("\n"), "timeout": RUN_SECS}},
                      timeout=RUN_SECS + 15)

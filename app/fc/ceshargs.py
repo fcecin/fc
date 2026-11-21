@@ -89,3 +89,22 @@ def here(line):
     if not m:
         return line, None
     return line[:m.start()].rstrip(), m.group(2)
+
+
+def unclosed(text):
+    """The end word of the first heredoc in `text` that has no end line after
+    it, else None. bash waits for that end line, so the command stops only at
+    its time limit."""
+    lines = text.split("\n")
+    i = 0
+    while i < len(lines):
+        _, end = here(lines[i])
+        i += 1
+        if end is None:
+            continue
+        while i < len(lines) and lines[i].rstrip("\r") != end:
+            i += 1
+        if i == len(lines):
+            return end
+        i += 1
+    return None

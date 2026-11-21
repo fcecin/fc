@@ -1260,6 +1260,15 @@ class CeshArgs(TestCase):
         self.assertEqual(ceshargs.here('cesh think "a <<END"'), ('cesh think "a <<END"', None))
         self.assertEqual(ceshargs.here("cesh query <<END x"), ("cesh query <<END x", None))
 
+    def test_a_heredoc_needs_its_end_line_somewhere_after_it(self):
+        self.assertIsNone(ceshargs.unclosed("cat > a <<'END'\nx\nEND\nwc -l a"))
+        self.assertIsNone(ceshargs.unclosed("cat > a <<END\nx\nEND\ncat > b <<EOF\ny\nEOF"))
+        self.assertIsNone(ceshargs.unclosed("ls\ncat > a <<END\nEND"))
+        self.assertIsNone(ceshargs.unclosed("echo hi"))
+        self.assertEqual(ceshargs.unclosed("cat > a <<END\nx\n  END"), "END")
+        self.assertEqual(ceshargs.unclosed("cat > a <<END\nx\nEND\ncat > b <<EOF\ny"), "EOF")
+        self.assertEqual(ceshargs.unclosed("ls\ncat > a <<END"), "END")
+
     def test_a_long_output_is_cut_for_the_model(self):
         self.assertIn("[... 9900 more bytes]", aishell.cap("x" * 10000, 100))
         self.assertEqual(aishell.cap("short", 100), "short")
@@ -1393,6 +1402,13 @@ class ChatCesh(Base):
         self.assertEqual(self.runs(), ["cesh file put - a.lua <<END\nlocal x = 1\n  ces.run()\nEND"])
         m = [x for x in lines if x.kind == "model"][0]
         self.assertEqual(kernel.line_json(m)["text"], "I write it.")
+
+    def test_a_command_goes_on_after_its_heredoc(self):
+        u = self.person("ana")
+        cmd = "cat > a.lua <<'END'\nlocal x = 1\nEND\nwc -l a.lua"
+        self.fake.answers = [sh(cmd), "Done."]
+        self.turn(u, "make a program")
+        self.assertEqual(self.runs(), [cmd])
 
     def test_input_with_no_end_line_does_not_run(self):
         u = self.person("ana")
