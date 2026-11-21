@@ -32,7 +32,8 @@ OpResult bridgeError(const std::string& msg) {
 // A timeout can mean a dead session, so a failed call drops it and the next
 // request reconnects.
 bool isTransportFailure(uint8_t rc) {
-  return rc == ces::CES_ERROR_TIMEOUT || rc == ces::CES_ERROR_INTERNAL;
+  return rc == ces::CES_ERROR_TIMEOUT || rc == ces::CES_ERROR_INTERNAL ||
+         rc == ces::CES_ERROR_UNREACHABLE || rc == ces::CES_ERROR_CONNECTION_LOST;
 }
 
 bool publicAddress(const boost::asio::ip::address& a) {

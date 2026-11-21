@@ -14,7 +14,8 @@ ComputeResult fail(uint8_t rc) {
 }
 
 bool transportFailure(uint8_t rc) {
-  return rc == ces::CES_ERROR_TIMEOUT || rc == ces::CES_ERROR_INTERNAL;
+  return rc == ces::CES_ERROR_TIMEOUT || rc == ces::CES_ERROR_INTERNAL ||
+         rc == ces::CES_ERROR_UNREACHABLE || rc == ces::CES_ERROR_CONNECTION_LOST;
 }
 
 std::string idOf(const FileServer& s) { return s.host + ":" + std::to_string(s.rpcPort); }
@@ -25,44 +26,38 @@ uint8_t connect(ces::CesComputeClient& c, const FileServer& s, const ces::KeyPai
   return c.connect(s.host, s.rpcPort, kp);
 }
 
+// Connect as `kp`, run f(client, result), then end the client's channel with
+// the server.
+template <class F>
+ComputeResult session(const FileServer& s, const ces::KeyPair& kp, F&& f) {
+  ces::CesComputeClient c;
+  uint8_t rc = connect(c, s, kp);
+  ComputeResult r;
+  if (rc == ces::CES_OK)
+    rc = f(c, r);
+  c.disconnect();
+  return rc == ces::CES_OK ? r : fail(rc);
+}
+
 } // namespace
 
 ComputeOps::ComputeOps(const ces::KeyPair& readerKey) : readerKey_(readerKey) {}
 
 ComputeResult ComputeOps::launch(const FileServer& s, const ces::KeyPair& owner,
                                  const std::string& path) {
-  ces::CesComputeClient c;
-  uint8_t rc = connect(c, s, owner);
-  if (rc != ces::CES_OK)
-    return fail(rc);
-  ComputeResult r;
-  rc = c.launch(path, r.pid, r.startedUs);
-  if (rc != ces::CES_OK)
-    return fail(rc);
-  return r;
+  return session(s, owner, [&](ces::CesComputeClient& c, ComputeResult& r) {
+    return c.launch(path, r.pid, r.startedUs);
+  });
 }
 
 ComputeResult ComputeOps::kill(const FileServer& s, const ces::KeyPair& owner, uint64_t pid) {
-  ces::CesComputeClient c;
-  uint8_t rc = connect(c, s, owner);
-  if (rc != ces::CES_OK)
-    return fail(rc);
-  rc = c.kill(pid);
-  if (rc != ces::CES_OK)
-    return fail(rc);
-  return {};
+  return session(s, owner, [&](ces::CesComputeClient& c, ComputeResult&) { return c.kill(pid); });
 }
 
 ComputeResult ComputeOps::list(const FileServer& s, const ces::KeyPair& owner) {
-  ces::CesComputeClient c;
-  uint8_t rc = connect(c, s, owner);
-  if (rc != ces::CES_OK)
-    return fail(rc);
-  ComputeResult r;
-  rc = c.list(r.instances);
-  if (rc != ces::CES_OK)
-    return fail(rc);
-  return r;
+  return session(s, owner, [&](ces::CesComputeClient& c, ComputeResult& r) {
+    return c.list(r.instances);
+  });
 }
 
 // Runs f(client) on a new reader connection, then closes it, since an open
@@ -70,22 +65,15 @@ ComputeResult ComputeOps::list(const FileServer& s, const ces::KeyPair& owner) {
 // gets one more try on a new connection.
 template <class F>
 ComputeResult ComputeOps::withReader(const FileServer& s, F&& f) {
+  ComputeResult last;
   for (int attempt = 0; attempt < 2; ++attempt) {
-    ces::CesComputeClient c;
-    uint8_t rc = connect(c, s, readerKey_);
-    if (rc != ces::CES_OK) {
-      std::cerr << "compute reader connect " << idOf(s) << " failed: " << ces::errorString(rc) << "\n";
-      return fail(rc);
-    }
-    ComputeResult r;
-    rc = f(c, r);
-    if (transportFailure(rc))
-      continue;
-    if (rc != ces::CES_OK)
-      return fail(rc);
-    return r;
+    last = session(s, readerKey_, f);
+    if (!transportFailure(last.code))
+      break;
   }
-  return fail(ces::CES_ERROR_TIMEOUT);
+  if (transportFailure(last.code))
+    std::cerr << "compute reader " << idOf(s) << " failed: " << last.error << "\n";
+  return last;
 }
 
 ComputeResult ComputeOps::instances(const FileServer& s, const std::string& path) {
@@ -103,15 +91,9 @@ ComputeResult ComputeOps::call(const FileServer& s, const ces::KeyPair* caller, 
       return c.call(pid, 0, memo, r.reply);
     });
   }
-  ces::CesComputeClient c;
-  uint8_t rc = connect(c, s, *caller);
-  if (rc != ces::CES_OK)
-    return fail(rc);
-  ComputeResult r;
-  rc = c.call(pid, value, memo, r.reply);
-  if (rc != ces::CES_OK)
-    return fail(rc);
-  return r;
+  return session(s, *caller, [&](ces::CesComputeClient& c, ComputeResult& r) {
+    return c.call(pid, value, memo, r.reply);
+  });
 }
 
 } // namespace fc

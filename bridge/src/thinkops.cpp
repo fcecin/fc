@@ -16,6 +16,7 @@ ThinkResult think(const FileServer& s, const ces::KeyPair& signer, const ces::Th
     rc = c.chat(input.text, onText, r.reply, r.chat, r.charged, &r.report);
   else if (rc == ces::CES_OK)
     rc = c.think(input.text, onText, r.reply, r.charged, {}, nullptr, &r.report);
+  c.disconnect();
   if (rc != ces::CES_OK) {
     r.code = rc;
     r.error = ces::errorString(rc);
