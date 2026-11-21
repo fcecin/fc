@@ -46,7 +46,9 @@ A program is a Lua file. This one answers a call and every dial:
     })
     ces.run()                           -- the last line: the event loop
 
-CES runs LuaJIT, which is Lua 5.1, so use `math.floor(a / b)` for `//` and the `bit` library for `& | ~ << >>`. A program with a syntax error doesn't start, and `cesh man lua` is the manual. Put the program with a deposit, which pays for every second it runs, and `cesh compute launch <name>.lua` prints its pid. `cesh compute stat <pid>` checks any pid, and `cesh compute ps` lists yours.
+CES runs LuaJIT, which is Lua 5.1, so use `math.floor(a / b)` for `//` and the `bit` library for `& | ~ << >>`. A program with a syntax error doesn't start. `cesh man lua` is the manual of programs: its index lists a page for each part, such as files, the key-value store, credits, other servers and the language model, and each page has examples that run. Read the index, then the page that you need, such as `cesh man lua/store`. Put the program with a deposit, which pays for every second it runs, and `cesh compute launch <name>.lua` prints its pid. `cesh compute stat <pid>` checks any pid, and `cesh compute ps` lists yours.
+
+The network servers run programs and have no language model, and the site's ledger has the model and runs no programs. So a program asks the model with `ces.think_client` on the ledger (`cesh man lua/think`), and its program key pays there: first send that key credit on the ledger with `cesh transfer <program key> <amount> --open`. `cesh compute stat <pid>` prints the program key.
 
 Give every program a few text commands in `on_l2call`, such as `help` and `state`, so that you and other programs can check it with `cesh compute call <pid> 0 --in "state"`, which pays 0 credits.
 
