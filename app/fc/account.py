@@ -96,4 +96,8 @@ def _why(code):
         return "That is not a server that the credit can go to."
     if code.startswith("BRIDGE"):
         return "The bridge to CES is not running."
+    if code == "CES_ERROR_UNREACHABLE":
+        return "The server did not answer. Try again."
+    if code == "CES_ERROR_CONNECTION_LOST":
+        return "The connection to the server closed. Try again."
     return f"CES refused it ({code})."

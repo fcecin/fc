@@ -21,9 +21,6 @@ from .models import ChatLine, Profile
 log = logging.getLogger("fc.kernel")
 
 COMPACT_AT = 70
-# A think call that fails this fast with CES_ERROR_INTERNAL, before any of the
-# answer, never reached the model, so it runs once more.
-FAST_FAIL_SECS = 3.0
 KEEP = 25
 # The model's limits, until a server gives them.
 DEFAULT_WINDOW = 65536
@@ -341,7 +338,8 @@ def _think_stream(profile, req):
             log.warning("think of user %s failed: %s after %.1f s, %s, %d bytes of request, try %d",
                         profile.user_id, e.code, secs, "in the answer" if got else "before the answer",
                         _size(req), attempt)
-            if attempt == 1 and not got and e.code == "CES_ERROR_INTERNAL" and secs < FAST_FAIL_SECS:
+            # An unreachable ledger got nothing and charged nothing.
+            if attempt == 1 and e.code == "CES_ERROR_UNREACHABLE":
                 time.sleep(0.5)
                 continue
             raise

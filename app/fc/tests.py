@@ -1334,27 +1334,33 @@ class ChatCesh(Base):
         self.turn(u, "what is on the desk?")
         self.assertEqual(len(self.fake.prompts), 3)
 
-    def test_a_think_call_that_fails_fast_runs_once_more(self):
+    def test_an_unreachable_ledger_is_asked_once_more(self):
         u = self.person("ana")
         real, calls = self.fake.stream, []
 
         def flaky(op, timeout=20, **args):
             calls.append(op)
             if len(calls) == 1 or self.always:
-                raise bridge.BridgeError("CES_ERROR_INTERNAL")
+                raise bridge.BridgeError(self.code)
                 yield {}        # a generator, as bridge.stream
             return (yield from real(op, timeout, **args))
-        self.always = False
+        self.always, self.code = False, "CES_ERROR_UNREACHABLE"
         self.fake.answers = ["Hi."]
         with mock.patch.object(bridge, "stream", flaky), self.assertLogs("fc.kernel", "WARNING") as logs:
             lines = kernel.say(Profile.objects.get(user=u), "hello")
         self.assertEqual((lines[-1].kind, lines[-1].text, len(calls)), ("model", "Hi.", 2))
-        self.assertIn("CES_ERROR_INTERNAL after", logs.output[0])
+        self.assertIn("CES_ERROR_UNREACHABLE after", logs.output[0])
         self.always, calls[:] = True, []
         with mock.patch.object(bridge, "stream", flaky), self.assertLogs("fc.kernel", "WARNING"):
             with self.assertRaises(kernel.ChatError):
                 kernel.say(Profile.objects.get(user=u), "hello again")
         self.assertEqual(len(calls), 2)
+        # The ledger got the call and may have charged it, so it runs once.
+        self.code, calls[:] = "CES_ERROR_INTERNAL", []
+        with mock.patch.object(bridge, "stream", flaky), self.assertLogs("fc.kernel", "WARNING"):
+            with self.assertRaises(kernel.ChatError):
+                kernel.say(Profile.objects.get(user=u), "hello once more")
+        self.assertEqual(len(calls), 1)
 
     def test_a_turn_that_reaches_the_cap_says_so(self):
         u = self.person("ana")
