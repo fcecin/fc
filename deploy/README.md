@@ -25,6 +25,7 @@ It writes `ledger.toml`, `net1.toml` to `netN.toml` and two reserve scripts, and
 4. Install `ces` built with `--think` in `/opt/fc/ces/`, `fc-bridge` in `/opt/fc/bridge/`, and `ceshd` (Linux 6.7 or later) in `/opt/fc/ceshd/` with the no-login user `ceshd`.
 5. Copy `app/` to `/opt/fc/app/`, make the venv in `/opt/fc/venv`, and run `manage.py migrate --run-syncdb` and `collectstatic`.
 6. Install the units in `systemd/` and the `Caddyfile`, start them, enable `fc-walk.timer`, and open the ledger's UDP port.
+7. Put the ces source of the commit that `bridge/CMakeLists.txt` pins in `/opt/fc/library/ces`, readable by all (`git fetch --depth 1` of that commit). The shells read it at `/library/ces`.
 
 ## 4. Credit
 
@@ -32,4 +33,4 @@ It writes `ledger.toml`, `net1.toml` to `netN.toml` and two reserve scripts, and
 
 ## 5. Updates
 
-Copy `app/`, run `migrate --run-syncdb` and `collectstatic`, and `systemctl reload fc-app`, which lets running requests finish. fc keeps no migrations: after a change to the models, delete the database and run `migrate --run-syncdb` again, which starts it empty. Restart `fc-bridge`, `fc-ceshd` or `fc-hub` only when their code changed, and the shells reconnect to a restarted hub.
+Copy `app/`, run `migrate --run-syncdb` and `collectstatic`, and `systemctl reload fc-app`, which lets running requests finish. fc keeps no migrations: after a change to the models, delete the database and run `migrate --run-syncdb` again, which starts it empty. Restart `fc-bridge`, `fc-ceshd` or `fc-hub` only when their code changed, and the shells reconnect to a restarted hub. When the ces pin of the bridge changes, put that commit in `/opt/fc/library/ces`.

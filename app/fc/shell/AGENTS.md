@@ -11,6 +11,8 @@ The shell is bash in your home on the site, which holds 16 MB and is deleted whe
 
 Python 3 and the usual tools are here too. The site presses Ctrl+C on an assistant command after 60 seconds, so a command that waits for keys, such as a plain `cesh dial`, holds the shell until then. The assistant never exits the shell.
 
+`/library` holds texts that the site gives to read, and nothing in it changes. `/library/ces` is the source of CES at the commit that the site uses. Read it to see how CES works: `src/cesluajitd` is the runtime of Lua programs, `src/cesh/docs` holds the pages of `cesh man`, and `CLAUDE.md` is the guide for its developers.
+
 ## Jobs
 
 Run anything longer than 60 seconds, or a wait for a program, as a background job:
