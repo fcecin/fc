@@ -48,6 +48,7 @@
 
 #include <ces/keys.h>
 #include <ces/util/ctrlc.h>
+#include <minx/blog.h>
 
 #include <boost/asio.hpp>
 #include <boost/json.hpp>
@@ -791,6 +792,10 @@ void serve(Bridge& bridge, local::socket sock) {
 } // namespace
 
 int main(int argc, char** argv) {
+  // The warnings and errors of the CES client library go to stdout, and
+  // so to the journal.
+  blog::init();
+  blog::set_level(blog::warning);
   Config cfg;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
