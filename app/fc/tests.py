@@ -2496,6 +2496,12 @@ class Network(Base):
         self.person("ana", server="127.0.0.1:55190")       # a server in no peer table
         self.assertIn("127.0.0.1:55190", net.walk())
 
+    def test_the_rules_name_the_servers_that_take_files(self):
+        u = self.person("ana", server=LEDGER)
+        head = kernel._head(u)
+        self.assertIn(f"{LEDGER} peers with {', '.join(NET)}.", head)
+        self.assertIn("holds only credit", head)
+
     def test_the_main_server_is_marked_for_the_sky(self):
         with override_settings(FC_MAIN_SERVER=NET[1]):
             s, j = self.api("GET", "/api/net")
