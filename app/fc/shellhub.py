@@ -76,14 +76,31 @@ class Systemd:
         return list(self._ask({"list": True}).get("shells", []))
 
 
+def library_root(library):
+    """The bwrap arguments for a root with this machine's top-level
+    directories and `library` at /library, read-only, as the site's shells
+    have it."""
+    args = ["bwrap", "--die-with-parent", "--dev", "/dev", "--proc", "/proc"]
+    for name in sorted(os.listdir("/")):
+        path = "/" + name
+        if name in ("dev", "proc", "library"):
+            continue
+        if os.path.islink(path):
+            args += ["--symlink", os.readlink(path), path]
+        elif os.path.isdir(path):
+            args += ["--bind", path, path]
+    return args + ["--ro-bind", library, "/library", "--"]
+
+
 class Local:
     """Shells as plain processes, for development and the tests. `argv`
-    replaces bash."""
+    replaces bash. With `library`, a shell sees that directory at /library."""
 
-    def __init__(self, run, homes, argv=None):
+    def __init__(self, run, homes, argv=None, library=None):
         self.run = run
         self.homes = homes
         self.argv = argv or []
+        self.library = library
         self.procs = {}
 
     def start(self, uid):
@@ -96,8 +113,10 @@ class Local:
         os.makedirs(os.path.join(self.run, f"u{uid}"), exist_ok=True)
         env = {"HOME": home, "PATH": f"{shell}/bin:/usr/bin:/bin", "TERM": "xterm-256color",
                "LANG": "C.UTF-8", "FCSH_SOCKET": os.path.join(self.run, f"u{uid}", "hub.sock")}
-        self.procs[uid] = subprocess.Popen([sys.executable, os.path.join(shell, "ptyhost.py"), *self.argv],
-                                           env=env, cwd=home, start_new_session=True)
+        cmd = [sys.executable, os.path.join(shell, "ptyhost.py"), *self.argv]
+        if self.library:
+            cmd = library_root(self.library) + cmd
+        self.procs[uid] = subprocess.Popen(cmd, env=env, cwd=home, start_new_session=True)
 
     def stop(self, uid):
         p = self.procs.pop(uid, None)

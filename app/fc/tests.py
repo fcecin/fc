@@ -2,7 +2,8 @@ import hashlib
 import json
 import os
 import re
-from unittest import mock
+import shutil
+from unittest import mock, skipUnless
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -550,6 +551,25 @@ class Enter(Base):
         self.assertContains(c.get("/"), 'name="handle"')   # the next page asks for the handle
         c.post("/account/handle", {"handle": "zoe"})
         self.assertEqual(Profile.objects.get(user=u).handle, "zoe")
+
+    @override_settings(FC_LOGIN_WITHOUT_CODE=True)
+    def test_local_testing_enters_with_no_code(self):
+        u = self.person("ana")
+        c = Client()
+        r = c.post("/enter", {"email": "Ana@x.org"})
+        self.assertRedirects(r, "/", fetch_redirect_response=False)
+        self.assertEqual(int(c.session["_auth_user_id"]), u.pk)
+        r = Client().post("/enter", {"email": "new@x.org"})
+        self.assertRedirects(r, "/", fetch_redirect_response=False)
+        self.assertTrue(Profile.objects.get(user__email="new@x.org").granted)
+        self.assertEqual(mail.outbox, [])
+
+    @override_settings(FC_LOGIN_WITHOUT_CODE=False)
+    def test_an_email_needs_its_code_without_the_setting(self):
+        c = Client()
+        c.post("/enter", {"email": "ana@x.org"})
+        self.assertNotIn("_auth_user_id", c.session)
+        self.assertEqual(len(mail.outbox), 1)
 
     def test_a_known_email_enters_the_same_account(self):
         u = self.person("ana")
@@ -2588,3 +2608,21 @@ class Network(Base):
         s, j = self.api("GET", "/api/net")
         self.assertEqual([n["pos"] for n in j["nodes"]], [whole[n["address"]] for n in j["nodes"]])
         self.assertEqual(self.api("GET", "/api/net")[1]["nodes"], j["nodes"])
+
+
+@skipUnless(shutil.which("bwrap"), "needs bwrap")
+class LocalLibrary(TestCase):
+    """A local shell with a library sees it at /library, read-only, as the
+    site's shells do."""
+
+    def test_the_library_is_at_slash_library_and_read_only(self):
+        import subprocess
+        import tempfile
+        with tempfile.TemporaryDirectory() as lib:
+            os.makedirs(os.path.join(lib, "ces"))
+            with open(os.path.join(lib, "ces", "README"), "w") as f:
+                f.write("ces source\n")
+            run = lambda cmd: subprocess.run(shellhub.library_root(lib) + cmd, capture_output=True, text=True)
+            self.assertEqual(run(["cat", "/library/ces/README"]).stdout, "ces source\n")
+            self.assertNotEqual(run(["touch", "/library/x"]).returncode, 0)
+            self.assertEqual(run(["sh", "-c", "test -d /usr/bin && echo ok"]).stdout, "ok\n")

@@ -61,6 +61,8 @@ def enter(request):
     email = (request.POST.get("email") or "").strip().lower()
     if not EMAIL_RE.match(email):
         return render(request, "fc/enter.html", {"error": "That is not an email address."}, status=400)
+    if settings.FC_LOGIN_WITHOUT_CODE:
+        return _enter_as(request, email)
     if _limited(f"ip:{_ip(request)}", SENDS_PER_IP) or _limited(f"email:{email}", SENDS_PER_EMAIL):
         return render(request, "fc/enter.html", {"error": "Too many codes. Wait a few minutes."}, status=429)
     code = "".join(secrets.choice(ALPHABET) for _ in range(8))
@@ -103,6 +105,11 @@ def enter_code(request):
         request.session.pop("fc_enter", None)
         return render(request, "fc/enter.html", {"error": "This code no longer works. Ask for a new one."})
     request.session.pop("fc_enter", None)
+    return _enter_as(request, email)
+
+
+def _enter_as(request, email):
+    """Log in the account of `email`, and make it for a new email."""
     User = get_user_model()
     user = User.objects.filter(email__iexact=email).first()
     if user is None:

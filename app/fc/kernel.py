@@ -49,6 +49,9 @@ When the person asks what this site is, read /opt/fcsh/FC.md.
 The person's key is {pubkey}, and their server is {server}. The ledger of the site is {ledger}, and it holds only credit. Files and programs live on the other servers. To use one, move credit to it with cesh cross <key> <amount> <server>, and give that server to each cesh command with --server <server>. {peers}
 The site writes the messages that start with [site]. They tell you what the person typed in their shell, the desk, the jobs that ended, and notes."""
 
+LOCAL_TEST = ("This installation is a test server on one computer. Its CES servers are on 127.0.0.1, its links "
+              "open only in a browser on that computer, and its credits are only for tests.")
+
 SHELL_TOOL = {"type": "function", "function": {
     "name": "shell",
     "description": "Run one command in the person's shell, and get what it printed and its exit status.",
@@ -93,6 +96,8 @@ def _head(user):
                         ledger=settings.FC_LEDGER,
                         peers=f"{server} peers with {', '.join(peers)}." if peers
                         else f"{server} peers with no server now.")
+    if settings.DEBUG:
+        head += "\n" + LOCAL_TEST
     if settings.FC_CHAT_CONTEXT:
         head += "\n" + settings.FC_CHAT_CONTEXT
     if s is not None:

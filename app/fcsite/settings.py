@@ -159,3 +159,7 @@ LOGGING = {
     "handlers": {"console": {"class": "logging.StreamHandler"}},
     "root": {"handlers": ["console"], "level": "INFO"},
 }
+
+# For local testing: an email enters at once, with no code. Only a debug
+# server reads this setting.
+FC_LOGIN_WITHOUT_CODE = DEBUG and env("FC_LOGIN_WITHOUT_CODE", "0") == "1"

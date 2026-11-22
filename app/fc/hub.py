@@ -650,7 +650,9 @@ def main():
     elif os.environ.get("FC_SHELL_LOCAL"):
         base = os.path.abspath(os.environ["FC_SHELL_LOCAL"])
         run = os.path.join(base, "run")
-        launcher = shellhub.Local(run, os.path.join(base, "homes"))
+        library = os.environ.get("FC_SHELL_LIBRARY")
+        launcher = shellhub.Local(run, os.path.join(base, "homes"),
+                                  library=os.path.abspath(library) if library else None)
     app = os.environ.get("FC_APP_URL", "http://127.0.0.1:8000")
     app_host = (os.environ.get("FC_HOSTS", "").split(",") or [""])[0] or None
     log.info("hub on %s:%s, site socket %s, cesh %s, shells in %s", host, port, sock, cesh, run)
