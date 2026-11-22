@@ -27,6 +27,12 @@ Run anything longer than 60 seconds, or a wait for a program, as a background jo
 
 The site's ledger holds only credit. Files and programs live on the network servers, so first move credit to one of them. The person does it on the site's network page, and the assistant does it with `cesh cross <your key> <amount> <server>`. Then give that server to each `cesh` command with `--server <server>`.
 
+`cesh --server <server> query <your key>` shows your balance on a server. `cesh cross` returns before the credit arrives, so query the other server, and use it when the balance is there. If the credit does not come in 30 seconds, tell the person, and do not send it again.
+
+When a command fails with a `CES_ERROR_` code, `cesh man basics/errors` tells what the code means and what to do. For example, `CES_ERROR_ORIGIN_NOT_FOUND` means that your key has no account on that server yet.
+
+When you do not understand what CES does, read its source in `/library/ces` before you try another guess. `grep -rn CES_ERROR_ORIGIN_NOT_FOUND /library/ces/src` finds where a code comes from, and the code near it tells why. The source is at the commit that the site runs, so it is the true answer when the manual leaves a question open.
+
 A CES file has a balance that pays for it. This puts a file with 1 credit in its balance:
 
     cesh file put - note.txt --deposit 100000000 <<END
