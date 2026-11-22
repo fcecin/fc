@@ -74,7 +74,7 @@ fee_bucket_byte_sec = 1
 max_channels_per_peer = 4
 max_reorder_bytes_per_channel = -1
 max_reorder_msgs_per_channel = -1
-channel_idle_secs = 600
+channel_idle_secs = 180
 """
 
 
@@ -108,8 +108,10 @@ think_subsidy_floor_bp = 1
 [cesplex_mounts]
 "/ces/think/1" = "builtin:think"
 
+# The channel cap is high because the site's chat opens many channels at once
+# from one address; 4 broke its bursts of calls.
 [rpc_rudp]
-max_channels_per_peer = 4
+max_channels_per_peer = 64
 max_reorder_bytes_per_channel = -1
 max_reorder_msgs_per_channel = -1
 channel_idle_secs = 600
