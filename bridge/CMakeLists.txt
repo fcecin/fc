@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 include(FetchContent)
 FetchContent_Declare(ces
   GIT_REPOSITORY https://github.com/fcecin/ces
-  GIT_TAG        44505e71e005e75e509a5e98e323703639bcd9ec)
+  GIT_TAG        fa93200bdd20ef841342c17d25bdf78747f6cc22)
 set(CES_CLIENT_ONLY ON CACHE BOOL "" FORCE)
 set(CES_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(ces)
