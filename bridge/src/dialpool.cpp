@@ -1,6 +1,7 @@
 #include "dialpool.h"
 
 #include <ces/buffer.h>
+#include <ces/cesplex/bind_client.h>
 #include <ces/cesplex/wire.h>
 #include <ces/client.h>
 #include <ces/types.h>
@@ -50,8 +51,8 @@ constexpr auto kHandshake = std::chrono::seconds(20);
 // The RUDP tick while a stream is open, at a CES server's own rpc cadence.
 constexpr auto kTick = std::chrono::milliseconds(10);
 constexpr size_t kChunk = 4096;
-// A hello rides the attach reply, up to this size.
-constexpr uint32_t kMaxHello = 1 << 20;
+// A greeting rides the attach reply, up to this size.
+constexpr uint32_t kMaxGreeting = 1 << 20;
 
 uint64_t nowMicros() {
   return static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::microseconds>(
@@ -133,7 +134,7 @@ struct Pipe : std::enable_shared_from_this<Pipe> {
   minx::Hash serverKey{};
   uint64_t pid = 0;
   std::optional<ces::KeyPair> signer;  // until the attach is signed
-  uint64_t token = 0;
+  ces::BindDigest bindDigest{};  // of the bind; the attach signs it
   std::shared_ptr<std::promise<Result>> result;
   bool settled = false;
   bool closed = false;
@@ -165,48 +166,32 @@ struct Pipe : std::enable_shared_from_this<Pipe> {
     sock = nullptr;
   }
 
-  // The signed bind on /ces/lua/1, whose reply must carry the server key that
-  // the bridge knows.
+  // The signed bind on /ces/lua/1. The bind refuses a server hello with
+  // another key than the one that the bridge knows, and signs nothing then.
   void bind() {
     auto self = shared_from_this();
-    const uint64_t t = nowMicros();
-    const std::string name = kLuaProto;
-    auto req = std::make_shared<minx::Bytes>(ces::buildBindRequest(name, t, *signer));
-    const auto& pk = signer->getPublicKeyAsHash();
-    auto digest = std::make_shared<std::array<uint8_t, ces::CES_PLEX_SHA256_SIZE>>(
-        ces::computeBindRequestDigest(
-            std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(name.data()), name.size()), t,
-            std::span<const uint8_t>(pk.data(), pk.size())));
-    asio::async_write(*stream, asio::buffer(*req),
-                      [self, req, digest](const boost::system::error_code& ec, size_t) {
-      if (ec)
-        return self->fail("bind: " + ec.message());
-      auto reply = std::make_shared<std::array<uint8_t, ces::CES_PLEX_BIND_REPLY_TOTAL_SIZE>>();
-      asio::async_read(*self->stream, asio::buffer(*reply),
-                       [self, reply, digest](const boost::system::error_code& ec2, size_t) {
-        if (ec2)
-          return self->fail("bind: " + ec2.message());
-        auto r = ces::parseBindReply(
-            std::span<const uint8_t, ces::CES_PLEX_BIND_REPLY_TOTAL_SIZE>(reply->data(), reply->size()));
-        if (r.status != ces::CES_PLEX_OK)
-          return self->fail("the server refused the bind");
-        if (!ces::verifyBindReply(r, std::span<const uint8_t>(digest->data(), digest->size())))
-          return self->fail("the bind reply does not verify");
-        if (std::memcmp(self->serverKey.data(), r.serverPubkey.data(), self->serverKey.size()) != 0)
-          return self->fail("the bind reply has the key of another server");
-        self->token = r.channelSessionToken;
-        self->attach();
-      });
+    ces::asyncClientBind(stream, kLuaProto, *signer, serverKey,
+                         [self](ces::BindError err, ces::ServerHello,
+                                ces::BindDigest digest) {
+      // The timeout can close the pipe after the reply came and before
+      // this runs. Then the pipe is done, and the success must not go on.
+      if (self->closed)
+        return;
+      if (err != ces::BindError::None)
+        return self->fail(std::string("bind: ") + ces::bindErrorText(err));
+      self->bindDigest = digest;
+      self->attach();
     });
   }
 
-  // The signed ATTACH to the program, whose reply carries the hello.
+  // The signed ATTACH to the program, whose reply carries the greeting of the
+  // program. Each completion returns if the pipe closed meanwhile.
   void attach() {
     auto self = shared_from_this();
     ces::Bytes preamble;
     ces::Buffer::put<uint64_t>(preamble, pid);
     ces::Signature sig = ces::signPerOp(
-        *signer, kVerbAttach, std::span<const uint8_t>(preamble.data(), preamble.size()), token);
+        *signer, kVerbAttach, std::span<const uint8_t>(preamble.data(), preamble.size()), bindDigest);
     signer.reset();
     const size_t total = ces::CES_PLEX_VERB_SIZE + ces::CES_PLEX_PREAMBLE_LEN_SIZE +
                          preamble.size() + sig.size();
@@ -218,32 +203,40 @@ struct Pipe : std::enable_shared_from_this<Pipe> {
     buf.put(sig);
     asio::async_write(*stream, asio::buffer(*wire),
                       [self, wire](const boost::system::error_code& ec, size_t) {
+      if (self->closed)
+        return;
       if (ec)
         return self->fail("attach: " + ec.message());
       auto st = std::make_shared<std::array<uint8_t, 1>>();
       asio::async_read(*self->stream, asio::buffer(*st),
                        [self, st](const boost::system::error_code& ec2, size_t) {
+        if (self->closed)
+          return;
         if (ec2)
           return self->fail("attach: " + ec2.message());
         if ((*st)[0] != ces::CES_OK)
           return self->fail(ces::errorString((*st)[0]));
-        // [conn id u64][hello length u32], then the hello and the trailer.
+        // [conn id u64][greeting length u32], then the greeting and the trailer.
         auto head = std::make_shared<std::array<uint8_t, 12>>();
         asio::async_read(*self->stream, asio::buffer(*head),
                          [self, head](const boost::system::error_code& ec3, size_t) {
+          if (self->closed)
+            return;
           if (ec3)
             return self->fail("attach: " + ec3.message());
-          const uint32_t helloLen =
+          const uint32_t greetingLen =
               ces::Buffer::peek<uint32_t>(std::span<const uint8_t>(head->data(), head->size()), 8);
-          if (helloLen > kMaxHello)
-            return self->fail("the hello of the program is too big");
-          auto rest = std::make_shared<ces::Bytes>(static_cast<size_t>(helloLen) +
+          if (greetingLen > kMaxGreeting)
+            return self->fail("the greeting of the program is too big");
+          auto rest = std::make_shared<ces::Bytes>(static_cast<size_t>(greetingLen) +
                                                    ces::CES_PLEX_RESP_TRAILER_SIZE);
           asio::async_read(*self->stream, asio::buffer(*rest),
-                           [self, rest, helloLen](const boost::system::error_code& ec4, size_t) {
+                           [self, rest, greetingLen](const boost::system::error_code& ec4, size_t) {
+            if (self->closed)
+              return;
             if (ec4)
               return self->fail("attach: " + ec4.message());
-            self->open(std::string(reinterpret_cast<const char*>(rest->data()), helloLen));
+            self->open(std::string(reinterpret_cast<const char*>(rest->data()), greetingLen));
           });
         });
       });
@@ -251,8 +244,8 @@ struct Pipe : std::enable_shared_from_this<Pipe> {
   }
 
   // The program answered, so the window gets one end of a socket pair, with
-  // the hello first on it.
-  void open(std::string hello) {
+  // the greeting first on it.
+  void open(std::string greeting) {
     int sv[2];
     if (::socketpair(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0, sv) != 0)
       return fail(std::string("socketpair: ") + std::strerror(errno));
@@ -260,7 +253,7 @@ struct Pipe : std::enable_shared_from_this<Pipe> {
     settled = true;
     result->set_value({sv[1], ""});
     auto self = shared_from_this();
-    auto h = std::make_shared<std::string>(std::move(hello));
+    auto h = std::make_shared<std::string>(std::move(greeting));
     asio::async_write(*fd, asio::buffer(*h), [self, h](const boost::system::error_code& ec, size_t) {
       if (ec)
         return self->close();

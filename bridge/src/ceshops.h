@@ -8,7 +8,7 @@
 // which brings the result and stops the command when closed, or "error TEXT".
 //   {"sealed": K, "server": "host:port", "dial": PID}
 // dials a program as the person (dialpool.h), and the "ok" reply carries one
-// end of a socket pair for the program's bytes, its hello first.
+// end of a socket pair for the program's bytes, its greeting first.
 
 #include "dialpool.h"
 

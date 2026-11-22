@@ -26,7 +26,7 @@ public:
 
   // Dials the program `pid` at the rpc port `rpc` of the server with the key
   // `serverKey`, signed by `signer`, and blocks for the handshake. Returns one
-  // end of a socket pair, which gives the program's bytes (its hello first)
+  // end of a socket pair, which gives the program's bytes (its greeting first)
   // and takes the bytes for it, and closing it ends the dial. On a failure,
   // returns -1 with the reason in `err`.
   int dial(const ces::KeyPair& signer, const minx::SockAddr& rpc,
