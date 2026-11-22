@@ -65,12 +65,15 @@ def launch(path, sealed, server, args, fds, timeout=5):
     raise LaunchError(text[6:] if text.startswith("error ") else (text or "no reply"))
 
 
-def dial(path, sealed, server, pid, timeout=25):
+def dial(path, sealed, server, pid, timeout=25, server_key=None):
     """Dial the program `pid` on `server` as the person of `sealed`. Returns
     the stream to the program (a socket), which gives the program's bytes,
     the hello first, and takes the bytes for it. Closing it ends the dial,
     and the bridge waits up to 20 s for the program."""
-    req = json.dumps({"sealed": sealed, "server": server, "dial": pid}).encode()
+    fields = {"sealed": sealed, "server": server, "dial": pid}
+    if server_key is not None:
+        fields["server_key"] = server_key
+    req = json.dumps(fields).encode()
     s = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
     s.settimeout(timeout)
     try:

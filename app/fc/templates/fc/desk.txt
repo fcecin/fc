@@ -82,6 +82,17 @@ OPS
      with spaces in double quotes, with \" for a quote and \\ for a
      backslash.
 
+{% if publications %}WEBSITES
+     website                   print the guide to websites, which tells how to
+                               write one, publish it and sell from it.
+     publish <window> <name>
+     publish <name> <source.lua> on <server>
+                               publish a running HTTP program and print its link.
+                               A bare file name is in your CES home.
+     unpublish <name>          withdraw the link and close access for visitors.
+     visit <name> [<path>]     show a page of your website as it comes through
+                               its link: the status, the type and the body.
+{% endif %}
 LIMITS
      A desktop holds 20 windows, the chat and the shell included. A text, a
      desk op in the shell and its output hold 4000 characters each, and a

@@ -160,7 +160,13 @@ void CeshServer::serve(int conn) const {
       for (int f : fds)
         ::close(f);
       fds.clear();
-      return dial(conn, sealed, std::string(s->as_string()), static_cast<uint64_t>(d->as_int64()));
+      std::string expectedKey;
+      if (auto* k = o.if_contains("server_key")) {
+        if (!k->is_string() || k->as_string().size() != 64)
+          return done("error invalid published server key");
+        expectedKey = std::string(k->as_string());
+      }
+      return dial(conn, sealed, std::string(s->as_string()), static_cast<uint64_t>(d->as_int64()), expectedKey);
     }
     if (fds.size() != 3)
       return done("error a request needs 3 descriptors: stdin, stdout, stderr");
@@ -198,7 +204,7 @@ void CeshServer::serve(int conn) const {
 }
 
 void CeshServer::dial(int conn, const std::string& sealed, const std::string& server,
-                      uint64_t pid) const {
+                      uint64_t pid, const std::string& expectedKey) const {
   auto done = [conn](const std::string& text, int fd = -1) {
     answer(conn, text, fd);
     ::close(conn);
@@ -209,6 +215,8 @@ void CeshServer::dial(int conn, const std::string& sealed, const std::string& se
   auto target = resolve_(server, why);
   if (!target)
     return done("error " + why);
+  if (!expectedKey.empty() && expectedKey != minx::hashToString(target->key))
+    return done("error the published server key changed");
   auto secret = unseal_(sealed);
   if (!secret)
     return done("error the key does not open");

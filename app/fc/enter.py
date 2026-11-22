@@ -120,7 +120,7 @@ def _enter_as(request, email):
     except Exception:
         # CES didn't answer, so the next page visit tries again.
         pass
-    return redirect("home")
+    return redirect(request.session.pop("publication_return", None) or "home")
 
 
 @require_POST

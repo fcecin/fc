@@ -6,15 +6,17 @@ in the shell and the model all send the same ops, and every change bumps
 Profile.desk_rev and goes whole to the open pages through the hub.
 """
 
+from http.client import HTTPException
 import re
 import shlex
 from pathlib import Path
 
+from django.conf import settings
 from django.db import transaction
 from django.template.loader import render_to_string
 
-from . import account, hub, push
-from .models import Profile, Widget
+from . import account, bridge, hub, launch, publications, push
+from .models import Profile, Publication, Widget
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
 SERVER = re.compile(r"^[A-Za-z0-9.:\[\]-]{1,253}:[0-9]{1,5}$")
@@ -23,7 +25,11 @@ MAX_TEXT = 4000
 MAX_TITLE = 80
 MAX_PX = 20000
 MIN_W, MIN_H = 200, 100  # the smallest window (the page's WinBox has the same)
-READS = {"ls", "show", "screen", "help", "man", "vs1", "look", "grid", "tail"}
+# The ops whose output the model reads before it goes on. The other ops
+# change the desk, and the model knows the desk that it made. A publication
+# op prints what the model must tell, such as a link, so it is here too.
+READS = {"ls", "show", "screen", "help", "man", "vs1", "website", "look", "grid", "tail",
+         "publish", "unpublish", "visit"}
 OPS = "new, set, move, size, fold, unfold, del, run, ls, show, screen, help, man, vs1, look, grid, tail, press, click, type"
 # The ops that read or type on the person's open page, through the hub (fc/hub.py).
 HUB_OPS = {"look", "grid", "tail", "press", "click", "type"}
@@ -42,6 +48,9 @@ OPS_HELP = """the desk ops (man prints the whole manual):
   type <name> "<text>"  (\\n is Enter)"""
 # A copy of ces's loadables/vs1/vs1.lua, for `desk vs1` and the tests.
 VS1 = Path(__file__).resolve().parent / "static" / "fc" / "vs1.lua"
+# The guide to websites and its example, for `desk website`.
+WEBSITE = Path(__file__).resolve().parent / "shell" / "WEBSITE.md"
+WEBSITE_EXAMPLE = Path(__file__).resolve().parent / "shell" / "booklet.lua"
 
 # A new window's place and size, when the op leaves them out.
 DEFAULTS = {"text": dict(x=60, y=60, w=360, h=200), "program": dict(x=80, y=80, w=560, h=420)}
@@ -59,6 +68,12 @@ def vs1_text():
     text = VS1.read_text()
     head = text[:text.index("local vs1 = {}")].rstrip().splitlines()
     return "\n".join(line[3:] if line.startswith("-- ") else line[2:] for line in head)
+
+
+def website_text():
+    """The guide to websites, with the example shop at its end."""
+    return (WEBSITE.read_text().rstrip() + "\n\n```lua\n" + WEBSITE_EXAMPLE.read_text().rstrip()
+            + "\n```")
 
 
 def widget_json(w):
@@ -152,6 +167,8 @@ def run(user, line):
     whether the desktop changed. Raises DeskError with the reason. A change
     goes to the open pages when it commits."""
     words = parse(line)
+    if settings.FC_PUBLICATIONS_PORT and words[0] in ("publish", "unpublish", "visit"):
+        return _publication(user, words[0], words[1:]), False
     if words[0] in HUB_OPS:
         return _hub(user, words[0], words[1:]), False
     with transaction.atomic():
@@ -159,6 +176,61 @@ def run(user, line):
         if changed:
             push.later(user.pk, lambda: {"desk": state(user)})
     return text, changed
+
+
+def _publication(user, op, args):
+    profile = Profile.objects.get(user=user)
+    if op == "visit":
+        return _visit(profile, args)
+    if not profile.handle:
+        raise DeskError("Choose a handle before publishing.")
+    if op == "unpublish":
+        if len(args) != 1:
+            raise DeskError("unpublish <name>")
+        name = _name(args[0])
+        deleted, _ = Publication.objects.filter(owner=profile, name=name).delete()
+        if not deleted:
+            raise DeskError("There is no publication with that name.")
+        return f"Unpublished {name}."
+    try:
+        if len(args) == 2:
+            window = _get(user, args[0])
+            if window.kind != "program":
+                raise DeskError("Select a program window.")
+            name = _name(args[1])
+            server = window.props["server"]
+            running = bridge.call("ps", sealed=profile.sealed, server=server)["instances"]
+            source = next((i["path"] for i in running if i["pid"] == window.props["pid"]), None)
+            if not source:
+                raise DeskError("For another author's program, publish its full source path.")
+        elif len(args) == 4 and args[2] == "on":
+            name, source, _, server = args
+            name = _name(name)
+            if not source.startswith("/"):
+                source = f"/h/{profile.pubkey}/{source}"
+        else:
+            raise DeskError("publish <window> <name>, or publish <name> <source.lua> on <server>")
+        return publications.publish(profile, name, server, source)
+    except (ValueError, bridge.BridgeError) as e:
+        raise DeskError(str(e)) from e
+
+
+def _visit(profile, args):
+    """A page of one of the person's own websites as it comes through its
+    link: visit <name> [<path>]. Only their own: the page goes into the
+    assistant's context, and the assistant holds the person's shell."""
+    if len(args) not in (1, 2) or "/" in args[0]:
+        raise DeskError("visit <name> [<path>], for a website that you published")
+    page = Publication.objects.filter(owner=profile, name=args[0]).first()
+    if page is None:
+        raise DeskError("You have no publication with that name.")
+    path = args[1] if len(args) == 2 else "/"
+    if not path.startswith("/") or path.startswith("//") or any(c in path for c in " \r\n"):
+        raise DeskError("A path starts with one / and has no spaces.")
+    try:
+        return publications.visit(profile, page, path)
+    except (ValueError, OSError, HTTPException, bridge.BridgeError, launch.LaunchError) as e:
+        raise DeskError(f"The website did not answer: {e}") from e
 
 
 def _hub(user, op, args):
@@ -260,11 +332,17 @@ def _apply(user, words):
                 out.append("cannot be deleted: it is a window of the kernel")
             return "\n".join(out), False
         if op == "help":
-            return OPS_HELP, False
+            help_text = OPS_HELP
+            if settings.FC_PUBLICATIONS_PORT:
+                help_text += ("\n  publish <window> <name>    publish <name> <source.lua> on <server>    "
+                              "unpublish <name>    visit <name> [<path>]    website")
+            return help_text, False
         if op == "man":
-            return render_to_string("fc/desk.txt").rstrip(), False
+            return render_to_string("fc/desk.txt", {"publications": settings.FC_PUBLICATIONS_PORT}).rstrip(), False
         if op == "vs1":
             return vs1_text(), False
+        if op == "website" and settings.FC_PUBLICATIONS_PORT:
+            return website_text(), False
         if op == "screen":
             p = Profile.objects.get(user=user)
             if not args:

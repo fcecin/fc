@@ -118,3 +118,67 @@ class Widget(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["user", "name"], name="unique_widget_name")]
         ordering = ["id"]
+
+
+class Publication(models.Model):
+    """A local name pointing to a CES program file across instance restarts."""
+    owner = models.ForeignKey(Profile, on_delete=models.CASCADE)
+    name = models.SlugField(max_length=40)
+    server = models.CharField(max_length=260)
+    server_key = models.CharField(max_length=64)
+    source = models.CharField(max_length=200)
+    program_key = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["owner", "name"], name="unique_publication")]
+
+
+class Payment(models.Model):
+    """A payment that a website asked a visitor for, and what became of it.
+    The payee is the website's program on its server. The order is the
+    website's name for this purchase, so a second request for the same order
+    gives this record again."""
+
+    PENDING = "pending"     # the visitor did not decide yet
+    DECLINED = "declined"
+    SENDING = "sending"     # fc sends the paid call now
+    PAID = "paid"
+    FAILED = "failed"       # the call did not go through, and the amount did not move
+    UNKNOWN = "unknown"     # the call went out, and no result came back
+
+    payer = models.ForeignKey(Profile, on_delete=models.CASCADE)
+    # The website that asked. A withdrawn publication keeps its payments.
+    publication = models.ForeignKey(Publication, null=True, on_delete=models.SET_NULL)
+    site = models.CharField(max_length=80)
+    server = models.CharField(max_length=260)
+    server_key = models.CharField(max_length=64)
+    source = models.CharField(max_length=200)
+    payee = models.CharField(max_length=64)
+    order = models.CharField(max_length=64)
+    description = models.CharField(max_length=200)
+    amount = models.PositiveBigIntegerField()
+    # The website path that the frame opens after the decision.
+    back = models.CharField(max_length=512, default="/")
+    state = models.CharField(max_length=8, default=PENDING)
+    created = models.DateTimeField(auto_now_add=True)
+    decided = models.DateTimeField(null=True)
+    # fc sets this when it accepts the approval, before it sends the call. A
+    # payment that is still sending after this time has an unknown outcome.
+    deadline = models.DateTimeField(null=True)
+    reply = models.TextField(blank=True, default="")
+    error = models.CharField(max_length=64, blank=True, default="")
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=["server", "payee", "payer", "order"],
+                                               name="unique_payment")]
+
+
+class PageVisit(models.Model):
+    """One browser handoff. Removing the login session revokes its visits."""
+    publication = models.ForeignKey(Publication, on_delete=models.CASCADE)
+    session = models.ForeignKey("sessions.Session", on_delete=models.CASCADE)
+    viewer = models.ForeignKey(Profile, on_delete=models.CASCADE)
+    ticket = models.CharField(max_length=64, unique=True, null=True)
+    cookie = models.CharField(max_length=64, unique=True, null=True)
+    expires = models.DateTimeField(db_index=True)
+    target = models.TextField()

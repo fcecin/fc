@@ -1,0 +1,23 @@
+{% extends "fc/base.html" %}
+{% block head_title %}payments | {% instance %}{% endblock %}
+{% block content %}
+<section class="panel">
+  <h2>payments</h2>
+  <p class="fine">The payments that websites asked you for. fc sends a payment only after you approve it, and never twice.</p>
+</section>
+{% for p in payments %}
+<section class="panel">
+  <h2>{{ p.site }}: {{ p.description }}</h2>
+  <p>{{ p.amount|credits }} credits to the program <code>{{ p.payee|slice:":16" }}…</code> on {{ p.server }}, order <code>{{ p.order }}</code></p>
+  <p>{% if p.state == "paid" %}Paid.{% if p.reply %} The website replied: {{ p.reply }}{% endif %}
+  {% elif p.state == "pending" %}Waiting for your decision on the website's page.
+  {% elif p.state == "declined" %}Declined. No credits moved.
+  {% elif p.state == "sending" %}fc sends this payment now.
+  {% elif p.state == "failed" %}The payment did not go through, and the amount did not move ({{ p.error }}).
+  {% else %}fc sent this payment, and no result came back ({{ p.error|default:"fc stopped before the result" }}). fc will not send it again. See your balance on {{ p.server }} before you buy this again.{% endif %}</p>
+  <p class="fine">{{ p.created|date:"Y-m-d H:i" }}</p>
+</section>
+{% empty %}
+<section class="panel"><p>No payments yet.</p></section>
+{% endfor %}
+{% endblock %}

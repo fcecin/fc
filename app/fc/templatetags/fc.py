@@ -1,8 +1,10 @@
-"""Template helpers: the installation's name, the viewer's server, the ledger
-and the miner downloads."""
+"""Template helpers: the installation's name, the viewer's server, the ledger,
+the miner downloads and credit text."""
 
 from django import template
 from django.conf import settings
+
+from ..credits import to_text
 
 register = template.Library()
 
@@ -29,3 +31,9 @@ def ledger():
 @register.simple_tag
 def miner_downloads():
     return settings.FC_MINER_DOWNLOADS
+
+
+@register.filter
+def credits(raw):
+    """Raw units as credit text, such as 1.50000000."""
+    return to_text(raw)

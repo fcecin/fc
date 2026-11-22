@@ -29,6 +29,22 @@ The tests:
 
 The VS1 tests run VS1 in the CES sandbox with the LuaJIT checker in `LJCHECK` (`ljcheck -s`), and skip without it.
 
+### Local CES websites
+
+Rebuild `fc-bridge` after updating its sources. With the local CES network, ceshd and bridge running, start the web service with `FC_PUBLICATIONS_PORT=8765 tools/dev.sh web` and sign in at `http://fc.localhost:8765/`. The development server adds the publication tables with its usual `migrate --run-syncdb`. The port setting enables this feature only in debug mode. Use a browser that resolves subdomains of `.localhost` to loopback.
+
+For a working example, copy [the guestbook](examples/guestbook.lua) into the fc shell as `board.lua`. On a funded local compute server, run `cesh file put board.lua board.lua --deposit 500000000 --server 127.0.0.1:55110` and `cesh compute launch board.lua --server 127.0.0.1:55110`. Two visitors can sign the same guestbook with their own keys.
+
+A website is a running Lua program that accepts HTTP/1.1 requests on its CES dial and closes the connection after each reply. The caller's key is `conn.pubkey`. Once you have uploaded and launched the program on a funded local CES server, publish it from the fc shell:
+
+    desk publish board board.lua on 127.0.0.1:55110
+
+The command prints `http://fc.localhost:8765/link/<your-handle>/board/`. Send the link, optionally with a page path and query appended, to another account on this development installation. The visitor signs in and sees the website in its own frame. HTML forms, CSS, images and redirects within the website work. This first version runs script-free app pages, with a 1 MiB request limit and an 8 MiB response limit. Each visitor needs credit on the serving CES server for the dial.
+
+A website can ask the visitor for a payment. It replies to a form post with the type `application/vnd.fc.payment+json` and a JSON object: an `order` name, a `description`, an `amount` in raw units as a decimal string, and an optional `return` path. fc shows the request in its own bar, outside the website's frame. An approval sends one paid call as the visitor to the website's program, with the order as the memo, and the program's `on_l2call` gets it. fc sends a payment at most once. A request for the same order gives the same payment again. If no result comes back, `/payments` shows that the outcome is unknown, and fc does not send the payment again. `desk website` prints the guide that the assistant reads, with [the booklet shop](app/fc/shell/booklet.lua) as its example.
+
+`desk publish <window> <name>` also accepts a program window on one of your own instances. `desk unpublish <name>` withdraws the link and its visits. The Lua program keeps running.
+
 ## Install and update
 
 See `deploy/README.md`.

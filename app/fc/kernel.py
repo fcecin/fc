@@ -49,6 +49,9 @@ When the person asks what this site is, read /opt/fcsh/FC.md.
 The person's key is {pubkey}, and their server is {server}. The ledger of the site is {ledger}, and it holds only credit. Files and programs live on the other servers. To use one, move credit to it with cesh cross <key> <amount> <server>, and give that server to each cesh command with --server <server>. {peers}
 The site writes the messages that start with [site]. They tell you what the person typed in their shell, the desk, the jobs that ended, and notes."""
 
+WEBSITES = ("People can make websites on this site. A Lua program serves the pages, and the site gives a link "
+            "that opens it in a browser. `desk website` prints the guide, with an example that sells something.")
+
 LOCAL_TEST = ("This installation is a test server on one computer. Its CES servers are on 127.0.0.1, its links "
               "open only in a browser on that computer, and its credits are only for tests.")
 
@@ -96,6 +99,8 @@ def _head(user):
                         ledger=settings.FC_LEDGER,
                         peers=f"{server} peers with {', '.join(peers)}." if peers
                         else f"{server} peers with no server now.")
+    if settings.FC_PUBLICATIONS_PORT:
+        head += "\n" + WEBSITES
     if settings.DEBUG:
         head += "\n" + LOCAL_TEST
     if settings.FC_CHAT_CONTEXT:

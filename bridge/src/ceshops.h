@@ -43,7 +43,8 @@ public:
 private:
   void serve(int conn) const;
 
-  void dial(int conn, const std::string& sealed, const std::string& server, uint64_t pid) const;
+  void dial(int conn, const std::string& sealed, const std::string& server, uint64_t pid,
+            const std::string& expectedKey) const;
 
   std::string socketPath_;
   std::string ceshdPath_;

@@ -14,14 +14,26 @@ class BridgeError(Exception):
         self.detail = detail or {}
 
 
-def call(op, timeout=20, **args):
-    """One bridge op. `timeout` (seconds) bounds the whole exchange, and a
-    think call, which waits for the model, passes a longer one."""
-    req = dict(op=op, **args)
+def connect(timeout):
+    """A socket to the bridge. BRIDGE_DOWN means that no request went out.
+    A failure after the request went out is BRIDGE_LOST: the bridge can have
+    done the op."""
     s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     s.settimeout(timeout)
     try:
         s.connect(settings.FC_BRIDGE_SOCKET)
+    except OSError:
+        s.close()
+        raise BridgeError("BRIDGE_DOWN")
+    return s
+
+
+def call(op, timeout=20, **args):
+    """One bridge op. `timeout` (seconds) bounds the whole exchange, and a
+    think call, which waits for the model, passes a longer one."""
+    req = dict(op=op, **args)
+    s = connect(timeout)
+    try:
         s.sendall((json.dumps(req) + "\n").encode())
         buf = b""
         while not buf.endswith(b"\n"):
@@ -30,7 +42,7 @@ def call(op, timeout=20, **args):
                 break
             buf += chunk
     except OSError:
-        raise BridgeError("BRIDGE_DOWN")
+        raise BridgeError("BRIDGE_LOST")
     finally:
         s.close()
     try:
@@ -47,10 +59,8 @@ def stream(op, timeout=20, **args):
     last as a dict, and returns the last one, the reply, as the generator's
     value. `timeout` bounds each wait for a line."""
     req = dict(op=op, **args)
-    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    s.settimeout(timeout)
+    s = connect(timeout)
     try:
-        s.connect(settings.FC_BRIDGE_SOCKET)
         s.sendall((json.dumps(req) + "\n").encode())
         buf = b""
         while True:
@@ -70,6 +80,6 @@ def stream(op, timeout=20, **args):
                 return msg
             yield msg
     except OSError:
-        raise BridgeError("BRIDGE_DOWN")
+        raise BridgeError("BRIDGE_LOST")
     finally:
         s.close()

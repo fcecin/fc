@@ -1,0 +1,19 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ name }}</title>
+<link rel="stylesheet" href="{% static 'fc/website.css' %}">
+<script defer src="{% static 'fc/website.js' %}"></script>
+</head>
+<body data-site="{{ site }}" data-server="{{ server }}">
+<header><a href="/">fc</a> <strong>{{ name }}</strong> <a href="/payments">payments</a> <span data-balance>{{ server }} · {{ balance }} credits</span></header>
+<section data-payments hidden aria-live="polite"></section>
+<form action="{{ bootstrap }}" method="post" target="site">
+  <input type="hidden" name="ticket" value="{{ ticket }}">
+  <noscript><button>Open {{ name }}</button></noscript>
+</form>
+<iframe name="site" title="{{ name }}" sandbox="allow-forms allow-same-origin"></iframe>
+</body>
+</html>

@@ -35,6 +35,9 @@
 // C = a chat request {"messages":[...],"tools":[...]} (ces::thinkChatCheck).
 // file_put and launch take only paths in /h/<owner>/. H = 64-hex public key.
 // N = raw units. Every reply has "ok"; a failed reply has "error".
+// An op on a file or compute server can also take "server_key":H, the key that
+// the server must have. Another key gives SERVER_KEY_CHANGED, and the op does
+// not reach the server.
 //
 // With --ceshd, a second socket (--cesh-socket) runs cesh and dials programs
 // as a person (ceshops.h, dialpool.h).
@@ -410,6 +413,19 @@ private:
       err = fail("NO_FILE_STORE");
       return std::nullopt;
     }
+    // A request can name the key that it expects, such as the key of a
+    // published website. The client checks the key in its handshake, so the
+    // op reaches only that server.
+    if (auto* k = req.if_contains("server_key")) {
+      if (!k->is_string() || !hashArg(req, "server_key")) {
+        err = fail("BAD_SERVER_KEY");
+        return std::nullopt;
+      }
+      if (k->as_string() != in->pubkey) {
+        err = fail("SERVER_KEY_CHANGED");
+        return std::nullopt;
+      }
+    }
     fc::FileServer fs;
     fs.host = d->substr(0, d->rfind(':'));
     fs.rpcPort = in->rpcPort;
@@ -545,6 +561,7 @@ private:
     json::array arr;
     for (const auto& i : v)
       arr.push_back(json::object{{"pid", i.pid}, {"path", i.sourceName},
+                                 {"program_key", minx::hashToString(i.programPubkey)},
                                  {"started_us", i.startedAtUs}, {"balance", i.fileBalance},
                                  {"cpu_bp", i.cpuBasisPoints}, {"rss", i.rssBytes}});
     return arr;

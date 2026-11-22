@@ -160,6 +160,12 @@ LOGGING = {
     "root": {"handlers": ["console"], "level": "INFO"},
 }
 
+# Opt in on a loopback development server. Its port is part of both origins.
+FC_PUBLICATIONS_PORT = int(env("FC_PUBLICATIONS_PORT", "0")) if DEBUG else 0
+
 # For local testing: an email enters at once, with no code. Only a debug
 # server reads this setting.
 FC_LOGIN_WITHOUT_CODE = DEBUG and env("FC_LOGIN_WITHOUT_CODE", "0") == "1"
+if FC_PUBLICATIONS_PORT:
+    ALLOWED_HOSTS += [".fc.localhost"]
+    MIDDLEWARE.insert(0, "fc.publications.ContentHost")
