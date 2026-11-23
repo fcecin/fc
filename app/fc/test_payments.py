@@ -386,7 +386,8 @@ class PaymentTests(TestCase):
         self.assertEqual(len(self.paid_calls()), 1)
 
     def test_failures_that_move_nothing(self):
-        for code in ["CES_ERROR_COMPUTE_INSTANCE_NOT_FOUND", "SERVER_KEY_CHANGED", "BRIDGE_DOWN"]:
+        for code in ["CES_ERROR_COMPUTE_INSTANCE_NOT_FOUND", "CES_ERROR_BALANCE_OVERFLOW",
+                     "SERVER_KEY_CHANGED", "BRIDGE_DOWN"]:
             Payment.objects.all().delete()
             payment = self.ask()
             with self.bridge(call_reply=bridge.BridgeError(code)):
