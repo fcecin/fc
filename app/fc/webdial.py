@@ -6,6 +6,7 @@ request, and a new response for the browser from a few fields of the
 program's reply. No other header goes either way, so the program never
 gets fc's cookies, and the browser never gets a cookie of the program."""
 
+import hashlib
 from http.client import HTTPConnection, HTTPException
 import logging
 import socket
@@ -18,6 +19,7 @@ from django.core.cache import cache
 from django.http import HttpResponse
 
 from . import account, bridge, launch, payments, publications
+from .models import Publication
 
 log = logging.getLogger("fc.webdial")
 
@@ -32,7 +34,7 @@ HOST = "site"
 VISIT_CREDIT = 1_000_000
 # fc starts the program of a website again at most once in this time, in
 # seconds, so that a program that ends at once does not start for each request.
-REVIVE_HOLD = 30
+REVIVE_HOLD = 600
 # The seconds that a program has from its start to its first dial.
 START = 5
 REDIRECTS = (301, 302, 303, 307, 308)
@@ -52,42 +54,67 @@ class Reply:
         self.status, self.content_type, self.locations, self.body = status, content_type, locations, body
 
 
+def instances(server, server_key, source):
+    """The running instances of a file, the newest last."""
+    found = bridge.call("instances", server=server, server_key=server_key, path=source)["instances"]
+    return sorted(found, key=lambda i: i.get("started_us", 0))
+
+
 def live_pid(server, server_key, source, program_key):
     """The pid of the program that serves a website: the newest running
     instance of `source` with the published program key, on the server with
     the published server key, or None. An author who launches a new version
     reaches visitors at once."""
-    instances = bridge.call("instances", server=server, server_key=server_key, path=source)["instances"]
-    mine = [i for i in instances if i.get("program_key") == program_key]
-    return max(mine, key=lambda i: i.get("started_us", 0))["pid"] if mine else None
+    mine = [i["pid"] for i in instances(server, server_key, source) if i.get("program_key") == program_key]
+    return mine[-1] if mine else None
 
 
-def revive(publication):
-    """Start the program of a website that does not run, as its owner, and
-    return its pid, or None when it does not start. CES starts no program
-    again after a restart of its server. fc starts only a file of the owner,
-    which its own balance pays for."""
-    owner = publication.owner
-    if not publication.source.startswith(f"/h/{owner.pubkey}/"):
+def revive(p):
+    """Start the program of the publication `p` that does not run, as its
+    owner, and return its pid, or None when it does not start. CES starts no
+    program again after a restart of its server."""
+    if not p.source.startswith(f"/h/{p.owner.pubkey}/"):
         return None
-    hold = f"starting:{publication.pk}"   # 1 while it starts, 0 after it did not
+    # 1 while it starts, 0 after it did not. Two names of one file share it.
+    hold = "starting:" + hashlib.sha256(f"{p.server} {p.source}".encode()).hexdigest()
     first = cache.add(hold, 1, REVIVE_HOLD)
-    if first:
-        try:
-            bridge.call("launch", sealed=owner.sealed, server=publication.server, path=publication.source)
-        except bridge.BridgeError as e:
-            log.warning("website %s: its program did not start: %s", publication.pk, e.code)
-            cache.set(hold, 0, REVIVE_HOLD)
-            return None
+    pid = launched(p) if first else None
+    if first and pid is None:
+        cache.set(hold, 0, REVIVE_HOLD)
+        return None
     end = time.monotonic() + START
     while cache.get(hold) and time.monotonic() < end:
-        pid = live_pid(publication.server, publication.server_key, publication.source, publication.program_key)
-        if pid is not None:
-            return pid
-        time.sleep(0.1)
+        keys = {i["pid"]: i.get("program_key") for i in instances(p.server, p.server_key, p.source)}
+        mine = [i for i, key in keys.items() if key == p.program_key]
+        # A file that was made again has another key, and another worker can
+        # start the program at the same moment. One instance stays.
+        extra = mine[:-1] + ([pid] if keys.get(pid, p.program_key) != p.program_key else [])
+        for i in extra if first else []:
+            bridge.call("kill", sealed=p.owner.sealed, server=p.server, server_key=p.server_key, pid=i)
+        if mine:
+            return mine[-1]
+        if pid in extra:
+            break
+        time.sleep(0.2)
     if first:
         cache.set(hold, 0, REVIVE_HOLD)
     return None
+
+
+def launched(p):
+    """Launch the file of the publication `p` as its owner, and return the
+    pid. None when the owner withdrew the link, the published file is not
+    there any more, or CES refuses."""
+    try:
+        # The account of the program key ends with its file.
+        account = bridge.call("balance", server=p.server, pubkey=p.program_key)
+        if not account.get("exists") or account["balance"] <= 0 or not Publication.objects.filter(pk=p.pk):
+            return None
+        return bridge.call("launch", sealed=p.owner.sealed, server=p.server, server_key=p.server_key,
+                           path=p.source)["pid"]
+    except bridge.BridgeError as e:
+        log.warning("website %s: its program did not start: %s", p.pk, e.code)
+        return None
 
 
 class NoCredit(Exception):

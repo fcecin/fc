@@ -62,6 +62,41 @@ class Program:
         self.worker.start()
 
 
+class Ces:
+    """The bridge, with the server of one website, for the starts of its
+    program."""
+
+    def __init__(self, page):
+        self.calls, self.live, self.pid = [], {}, 0
+        self.key = page.program_key      # the program key of the file at the path
+        self.account = {"exists": True, "balance": 5}
+        self.refuse, self.ends = {}, False
+        self.on_balance = self.on_launch = lambda: None
+
+    def did(self, op):
+        return [a for o, a in self.calls if o == op]
+
+    def call(self, op, timeout=20, **a):
+        self.calls.append((op, a))
+        if op in self.refuse:
+            raise bridge.BridgeError(self.refuse[op])
+        if op == "balance":
+            self.on_balance()
+            return dict(self.account)
+        if op == "launch":
+            self.pid += 1
+            self.on_launch()
+            if not self.ends:
+                self.live[self.pid] = {"program_key": self.key, "started_us": 100 + self.pid}
+            return {"pid": self.pid}
+        if op == "instances":
+            return {"instances": [dict(i, pid=p) for p, i in self.live.items()]}
+        if op == "kill":
+            del self.live[a["pid"]]
+            return {}
+        raise AssertionError(op)
+
+
 class WebsiteTests(TestCase):
     def setUp(self):
         cache.clear()   # the balances, and the holds of moves
@@ -565,52 +600,94 @@ class WebsiteTests(TestCase):
             self.assertIsNone(LIVE_PID(SERVER, "1" * 64, self.page.source, "4" * 64))
         self.assertEqual(call.call_args.kwargs, {"server": SERVER, "server_key": "1" * 64, "path": self.page.source})
 
+    def owned(self):
+        self.page.source = self.home + "board.lua"
+        self.page.save()
+        self.live.return_value = None
+        return Ces(self.page)
+
     def test_a_visit_starts_a_website_that_does_not_run(self):
         """CES starts no program again after a restart of its server. So a
         visit starts the program of a published website, as its owner."""
-        self.page.source = self.home + "board.lua"
-        self.page.save()
-        self.live.side_effect = [None, 9]
+        ces = self.owned()
         starting = launch.LaunchError("CES_ERROR_NOT_LISTENING")
-        with patch("fc.bridge.call", return_value={"ok": True, "pid": 9}) as call, \
-                patch("fc.webdial.roundtrip", side_effect=[starting, starting, reply()]) as trip, \
-                patch("fc.webdial.time.sleep"):
+        with patch("fc.bridge.call", ces.call), patch("fc.webdial.time.sleep"), \
+                patch("fc.webdial.roundtrip", side_effect=[starting, starting, reply()]) as trip:
             page = self.client.get("/link/ana/board/")
         self.assertEqual((page.status_code, page.content), (200, b"<p>hi</p>"))
-        call.assert_called_once_with("launch", sealed="ana", server=SERVER, path=self.page.source)
-        self.assertEqual({c.args[2] for c in trip.call_args_list}, {9})
-        self.assertEqual({c.args[0] for c in trip.call_args_list}, {self.viewer})
+        self.assertEqual(ces.did("launch"), [{"sealed": "ana", "server": SERVER, "server_key": self.page.server_key,
+                                              "path": self.page.source}])
+        self.assertEqual({(c.args[0], c.args[2]) for c in trip.call_args_list}, {(self.viewer, 1)})
+        self.assertEqual(list(ces.live), [1])
 
     def test_a_website_that_does_not_stay_up_starts_once_in_a_while(self):
         """A program that ends at its start, or that CES refuses to launch,
-        does not start for each request."""
-        self.page.source = self.home + "board.lua"
-        self.page.save()
-        self.live.return_value = None
-        for answer in ({"return_value": {"ok": True, "pid": 9}},
-                       {"side_effect": bridge.BridgeError("CES_ERROR_COMPUTE_FUND_TOO_LOW")}):
+        does not start for each request. Two names of one file are one
+        program."""
+        Publication.objects.create(owner=self.author, name="alias", server=SERVER, server_key="1" * 64,
+                                   source=self.home + "board.lua", program_key=self.page.program_key)
+        for broken in ({"ends": True}, {"refuse": {"launch": "CES_ERROR_COMPUTE_FUND_TOO_LOW"}}):
             cache.clear()
-            with patch("fc.bridge.call", **answer) as call, patch("fc.webdial.START", 0.01):
-                pages = [self.client.get("/link/ana/board/") for _ in range(3)]
+            ces = self.owned()
+            vars(ces).update(broken)
+            with patch("fc.bridge.call", ces.call), patch("fc.webdial.START", 0.01):
+                pages = [self.client.get(f"/link/ana/{name}/") for name in ("board", "board", "alias")]
             self.assertEqual([p.status_code for p in pages], [503] * 3)
             self.assertContains(pages[0], "The website is offline", status_code=503)
-            self.assertEqual([c.args[0] for c in call.call_args_list], ["launch"])
+            self.assertEqual(len(ces.did("launch")), 1)
         cache.clear()
-        with patch("fc.bridge.call", return_value={"ok": True, "pid": 9}) as call, patch("fc.webdial.START", 0.01), \
-                patch("fc.webdial.REVIVE_HOLD", 0.05):
+        ces = self.owned()
+        ces.ends = True
+        with patch("fc.bridge.call", ces.call), patch("fc.webdial.START", 0.01), patch("fc.webdial.REVIVE_HOLD", 0.05):
             self.client.get("/link/ana/board/")
             time.sleep(0.1)
             self.client.get("/link/ana/board/")
-        self.assertEqual(len(call.call_args_list), 2)
+        self.assertEqual(len(ces.did("launch")), 2)
 
-    def test_a_visit_starts_only_a_file_of_the_owner(self):
-        self.live.return_value = None
+    def test_a_visit_starts_only_the_published_file(self):
+        """The file is the owner's, it is the file that was published, and the
+        publication stands."""
+        ces = self.owned()
         for source in ("/p/board.lua", "/h/" + self.viewer.pubkey + "/board.lua", "/s/board.lua"):
             self.page.source = source
             self.page.save()
-            with patch("fc.bridge.call") as call:
+            with patch("fc.bridge.call", ces.call):
                 self.assertEqual(self.client.get("/link/ana/board/").status_code, 503)
-            call.assert_not_called()
+        # The account of the program key ends with its file.
+        for balance in ({"exists": False}, {"exists": True, "balance": 0}):
+            cache.clear()
+            ces = self.owned()
+            ces.account = balance
+            with patch("fc.bridge.call", ces.call):
+                self.assertEqual(self.client.get("/link/ana/board/").status_code, 503)
+            self.assertEqual(ces.did("launch"), [])
+        self.assertEqual(ces.did("balance"), [{"server": SERVER, "pubkey": self.page.program_key}])
+        # The owner withdraws the link while a visit looks for the program.
+        cache.clear()
+        ces = self.owned()
+        ces.on_balance = lambda: Publication.objects.all().delete()
+        with patch("fc.bridge.call", ces.call):
+            self.client.get("/link/ana/board/")
+        self.assertEqual(ces.did("launch"), [])
+
+    def test_a_file_that_was_made_again_does_not_stay_up(self):
+        """A file that was made again at the path has another program key. A
+        launch of it stops at once, and the owner's own instances stay."""
+        ces = self.owned()
+        ces.key = "8" * 64
+        ces.live[50] = {"program_key": "8" * 64, "started_us": 1}
+        with patch("fc.bridge.call", ces.call), patch("fc.webdial.START", 0.05):
+            self.assertEqual([self.client.get("/link/ana/board/").status_code for _ in range(3)], [503] * 3)
+        self.assertEqual((len(ces.did("launch")), list(ces.live)), (1, [50]))
+        self.assertEqual(ces.did("kill"), [{"sealed": "ana", "server": SERVER, "server_key": self.page.server_key,
+                                            "pid": 1}])
+
+    def test_two_visits_that_start_a_website_leave_one_instance(self):
+        ces = self.owned()
+        ces.on_launch = lambda: ces.live.__setitem__(40, {"program_key": self.page.program_key, "started_us": 1})
+        with patch("fc.bridge.call", ces.call), patch("fc.webdial.roundtrip", return_value=reply()) as trip:
+            self.assertEqual(self.client.get("/link/ana/board/").status_code, 200)
+        self.assertEqual((list(ces.live), trip.call_args.args[2]), ([1], 1))
 
     def test_visit_shows_a_page_as_the_visitor_gets_it(self):
         program = Program(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 11\r\n\r\n<p>hi</p>\r\n")
