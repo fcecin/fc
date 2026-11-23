@@ -13,6 +13,7 @@ import base64
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, os.getcwd())
@@ -47,6 +48,8 @@ def main():
     links = {}
     for name, source in SITES.items():
         text = source.read_text().replace("@OWNER@", owner.handle).replace("@OUT@", o.out)
+        # A fresh store of buyers for the shop, so that the same visitors can buy again.
+        text = text.replace('"/booklet.kv"', f'"/wc-booklet-{int(time.time())}.kv"')
         path = f"/h/{owner.pubkey}/wc-{name}.lua"
         for i in running:
             if i["path"] == path:
