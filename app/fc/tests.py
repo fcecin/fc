@@ -376,10 +376,12 @@ class Wake(Base):
         from . import api
         u = self.person("ana")
         cache.set(f"chat:busy:{u.pk}", 1, 60)                  # a turn runs
-        self.assertEqual(self.wake(u.pk, "job 1 ended").json(), {"error": "BUSY"})
-        cache.delete(f"chat:busy:{u.pk}")
-        self.assertEqual(self.wake(u.pk, "job 1 ended").json(), {"ok": True})
         with mock.patch.object(api, "MAX_WAKES", 2):
+            for _ in range(5):                             # a wake that waits does not count
+                self.assertEqual(self.wake(u.pk, "job 1 ended").json(), {"error": "BUSY"})
+            cache.delete(f"chat:busy:{u.pk}")
+            self.assertEqual(self.wake(u.pk, "job 1 ended").json(), {"ok": True})
+            self.assertEqual(self.wake(u.pk, "job 1 ended").json(), {"ok": True})
             self.assertEqual(self.wake(u.pk, "job 2 ended").json(), {"error": "TOO_MANY"})
         self.assertEqual(ChatLine.objects.filter(user=u, kind="note").last().text,
                          api.TOO_MANY_WAKES.format(2))
@@ -1071,7 +1073,8 @@ class Desk(Base):
         for line, op in (("desk website", "website"), ('desk new text milk "buy; milk & tea"', "new"),
                          ("desk move a 1 2 && cesh query @0", None), ("desk ls | head -3", None),
                          ("desk new text a b\ncesh query @0", None), ("cesh query; desk ls", None),
-                         ("desk website > /dev/null", None), ("desk", None), ("desk new text 'x", None)):
+                         ("desk website > /dev/null", None), ("desk", None), ("desk new text 'x", None),
+                         ("desk new text label item#1; desk ls", None), ("desk new text a item#1", "new")):
             self.assertEqual(aishell.desk_op(line), op, line)
 
     def test_a_read_goes_back_to_the_model(self):
@@ -1409,16 +1412,33 @@ class ChatCesh(Base):
 
     def test_a_long_turn_holds_the_next_line_back_to_its_end(self):
         """The hold of a turn ends BUSY_SECS after its last renewal. So each
-        model call and each command renews it."""
+        model call, also a fold, and each command renews it."""
         u = self.person("ana")
         self.fake.answers = [sh("cesh query", "ls"), sh("cesh query"), "done"]
         renewed = []
         touch = kernel.cache.touch
-        with mock.patch.object(kernel.cache, "touch", side_effect=lambda k, t: renewed.append((k, t)) or touch(k, t)):
+        with mock.patch.object(kernel.cache, "touch", side_effect=lambda k, t: renewed.append((k, t)) or touch(k, t)), \
+                mock.patch.object(kernel, "_fold", side_effect=lambda p: renewed.append("fold")), \
+                mock.patch.object(kernel, "COMPACT_AT", -1):
             self.turn(u, "look")
-        # Three model calls and three commands.
-        self.assertEqual(renewed, [(f"chat:busy:{u.pk}", kernel.BUSY_SECS)] * 6)
+        hold = (f"chat:busy:{u.pk}", kernel.BUSY_SECS)
+        self.assertEqual(renewed, [hold, "fold", hold, hold, hold] + [hold, "fold", hold, hold] + [hold, "fold", hold])
         self.assertIsNone(kernel.cache.get(f"chat:busy:{u.pk}"))
+
+    def test_a_turn_keeps_off_the_hold_of_another_turn(self):
+        """When a hold ended, another turn can have one. The first turn does
+        not renew it or end it."""
+        u = self.person("ana")
+        key = f"chat:busy:{u.pk}"
+        self.fake.answers = [sh("cesh query"), "done"]
+        turn = kernel.start(Profile.objects.get(user=u), "look")
+        next(turn)
+        kernel.cache.set(key, "another turn", 100)
+        with mock.patch.object(kernel.cache, "touch") as touch:
+            list(turn)
+        touch.assert_not_called()
+        self.assertEqual(kernel.cache.get(key), "another turn")
+        kernel.cache.delete(key)
 
     def test_a_line_that_fails_stops_the_lines_after_it(self):
         u = self.person("ana")

@@ -22,7 +22,7 @@ def desk_op(line):
     """The op of a line that is one desk command, or None. A line with a
     second command, a pipe or a redirect is more than its first op."""
     lex = shlex.shlex(line, posix=True, punctuation_chars=True)
-    lex.whitespace_split = True
+    lex.whitespace_split, lex.commenters = True, ""
     try:
         words = list(lex)
     except ValueError:

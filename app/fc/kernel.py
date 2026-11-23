@@ -9,6 +9,7 @@ the older lines into a summary.
 
 import json
 import logging
+import secrets
 import time
 
 from django.conf import settings
@@ -298,6 +299,26 @@ def _desk_now(profile):
     return line
 
 
+class Hold:
+    """The hold of a turn, which keeps back the person's next line. It ends
+    BUSY_SECS after its last renewal, and then another turn can have one. So a
+    turn renews and ends only its own."""
+
+    def __init__(self, user):
+        self.key, self.mine = f"chat:busy:{user.pk}", secrets.token_hex(8)
+
+    def take(self):
+        return cache.add(self.key, self.mine, BUSY_SECS)
+
+    def renew(self):
+        if cache.get(self.key) == self.mine:
+            cache.touch(self.key, BUSY_SECS)
+
+    def end(self):
+        if cache.get(self.key) == self.mine:
+            cache.delete(self.key)
+
+
 def start(profile, text, shell=None, job=None):
     """Check a line of the person and start the turn, one at a time per
     person, with `shell` (what the person ran) and `job` (a waking job's
@@ -316,10 +337,10 @@ def start(profile, text, shell=None, job=None):
         raise ChatError("BAD_TEXT", "That line is too long.")
     if len(shell) > SHELL_TYPED_MAX:
         shell = "[... older lines]\n" + shell[-SHELL_TYPED_MAX:]
-    lock = f"chat:busy:{user.pk}"
-    if not cache.add(lock, 1, BUSY_SECS):
+    hold = Hold(user)
+    if not hold.take():
         raise ChatError("BUSY", "The model is still answering your last line.", 409)
-    return _turn(profile, text, lock, shell, job)
+    return _turn(profile, text, hold, shell, job)
 
 
 def say(profile, text, shell=None, job=None):
@@ -356,7 +377,7 @@ def _think_stream(profile, req):
             raise
 
 
-def _turn(profile, text, lock, shell="", job=""):
+def _turn(profile, text, hold, shell="", job=""):
     user = profile.user
 
     def line(**kw):
@@ -372,7 +393,7 @@ def _turn(profile, text, lock, shell="", job=""):
         if seen:
             yield "line", seen
         for _ in range(MAX_CALLS):
-            cache.touch(lock, BUSY_SECS)
+            hold.renew()
             if _size(request(user)) / _bytes_per_token(user) * 100 > room(user) * COMPACT_AT:
                 folded = _fold(profile)
                 if folded:
@@ -382,6 +403,7 @@ def _turn(profile, text, lock, shell="", job=""):
                     if seen:
                         yield "line", seen
             req = request(user)
+            hold.renew()
             try:
                 r = yield from _think_stream(profile, req)
             except bridge.BridgeError as e:
@@ -391,7 +413,7 @@ def _turn(profile, text, lock, shell="", job=""):
             calls = [c for c in r.get("tool_calls") or [] if isinstance(c, dict) and c.get("id")]
             yield line(kind="model", text=(r.get("reply") or "").strip(), calls=calls or None,
                        reasoning=r.get("reasoning_content") or "", **_stats(r, req))
-            again = yield from _run(profile, calls, lock)
+            again = yield from _run(profile, calls, hold)
             _seen(profile)   # the model made these changes, so it knows the desk
             if not again:
                 break
@@ -399,10 +421,10 @@ def _turn(profile, text, lock, shell="", job=""):
             yield line(kind="note", text=STOPPED.format(MAX_CALLS))
     finally:
         _trim(user)
-        cache.delete(lock)
+        hold.end()
 
 
-def _run(profile, calls, lock):
+def _run(profile, calls, hold):
     """Run the commands of the model's tool calls, in order, each with its
     result line. Returns True when the model reads a result before it goes
     on."""
@@ -410,7 +432,7 @@ def _run(profile, calls, lock):
     again = False
     ops = commands = 0
     for c in calls:
-        cache.touch(lock, BUSY_SECS)
+        hold.renew()
 
         def result(text):
             return "line", ChatLine.objects.create(user=profile.user, kind=aishell.RAN, call_id=c["id"],

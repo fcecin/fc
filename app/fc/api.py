@@ -279,10 +279,11 @@ def hub_wake(request):
     stream = push.Stream(uid)
     try:
         # A job that wakes the model again and again spends the person's
-        # credit, so an hour allows few wakes.
+        # credit, so an hour allows few wakes. One that waits for a turn to
+        # end spends none.
         hour = f"wake:{uid}:{int(time.time() // 3600)}"
         cache.add(hour, 0, 3700)
-        if cache.incr(hour) > MAX_WAKES:
+        if cache.get(hour, 0) >= MAX_WAKES:
             line = ChatLine.objects.create(user=p.user, kind="note", text=TOO_MANY_WAKES.format(MAX_WAKES))
             stream.send({"chat": {"note": kernel.line_json(line)}})
             return JsonResponse({"error": "TOO_MANY"})
@@ -290,6 +291,7 @@ def hub_wake(request):
             turn = kernel.start(p, "", None, job=text[:WAKE_MAX])
         except kernel.ChatError as e:
             return JsonResponse({"error": e.code})
+        cache.incr(hour)
         for e in _turn_events(p, turn):
             stream.send({"chat": e})
         return JsonResponse({"ok": True})
