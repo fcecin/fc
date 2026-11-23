@@ -18,6 +18,9 @@ if not SECRET_KEY:
 ALLOWED_HOSTS = env("FC_HOSTS", "localhost,127.0.0.1").split(",")
 # The installation's name in the UI, which is its web domain.
 FC_NAME = env("FC_NAME", ALLOWED_HOSTS[0])
+# The address of the site in the links that fc prints, such as the link of a
+# website. A local server with a port of its own sets it.
+FC_URL = env("FC_URL", f"https://{FC_NAME}")
 CSRF_TRUSTED_ORIGINS = [f"https://{h}" for h in ALLOWED_HOSTS]
 
 INSTALLED_APPS = [
@@ -160,12 +163,6 @@ LOGGING = {
     "root": {"handlers": ["console"], "level": "INFO"},
 }
 
-# Opt in on a loopback development server. Its port is part of both origins.
-FC_PUBLICATIONS_PORT = int(env("FC_PUBLICATIONS_PORT", "0")) if DEBUG else 0
-
 # For local testing: an email enters at once, with no code. Only a debug
 # server reads this setting.
 FC_LOGIN_WITHOUT_CODE = DEBUG and env("FC_LOGIN_WITHOUT_CODE", "0") == "1"
-if FC_PUBLICATIONS_PORT:
-    ALLOWED_HOSTS += [".fc.localhost"]
-    MIDDLEWARE.insert(0, "fc.publications.ContentHost")

@@ -11,11 +11,10 @@ import re
 import shlex
 from pathlib import Path
 
-from django.conf import settings
 from django.db import transaction
 from django.template.loader import render_to_string
 
-from . import account, bridge, hub, launch, publications, push
+from . import account, bridge, hub, launch, publications, push, webdial
 from .models import Profile, Publication, Widget
 
 NAME = re.compile(r"^[a-z0-9][a-z0-9_-]{0,39}$")
@@ -167,7 +166,7 @@ def run(user, line):
     whether the desktop changed. Raises DeskError with the reason. A change
     goes to the open pages when it commits."""
     words = parse(line)
-    if settings.FC_PUBLICATIONS_PORT and words[0] in ("publish", "unpublish", "visit"):
+    if words[0] in ("publish", "unpublish", "visit"):
         return _publication(user, words[0], words[1:]), False
     if words[0] in HUB_OPS:
         return _hub(user, words[0], words[1:]), False
@@ -229,7 +228,7 @@ def _visit(profile, args):
         raise DeskError("A path starts with one / and has no spaces.")
     try:
         return publications.visit(profile, page, path)
-    except (ValueError, OSError, HTTPException, bridge.BridgeError, launch.LaunchError) as e:
+    except (ValueError, OSError, HTTPException, bridge.BridgeError, launch.LaunchError, webdial.NoCredit) as e:
         raise DeskError(f"The website did not answer: {e}") from e
 
 
@@ -332,16 +331,13 @@ def _apply(user, words):
                 out.append("cannot be deleted: it is a window of the kernel")
             return "\n".join(out), False
         if op == "help":
-            help_text = OPS_HELP
-            if settings.FC_PUBLICATIONS_PORT:
-                help_text += ("\n  publish <window> <name>    publish <name> <source.lua> on <server>    "
-                              "unpublish <name>    visit <name> [<path>]    website")
-            return help_text, False
+            return OPS_HELP + ("\n  publish <window> <name>    publish <name> <source.lua> on <server>    "
+                               "unpublish <name>    visit <name> [<path>]    website"), False
         if op == "man":
-            return render_to_string("fc/desk.txt", {"publications": settings.FC_PUBLICATIONS_PORT}).rstrip(), False
+            return render_to_string("fc/desk.txt").rstrip(), False
         if op == "vs1":
             return vs1_text(), False
-        if op == "website" and settings.FC_PUBLICATIONS_PORT:
+        if op == "website":
             return website_text(), False
         if op == "screen":
             p = Profile.objects.get(user=user)

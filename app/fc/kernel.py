@@ -99,8 +99,7 @@ def _head(user):
                         ledger=settings.FC_LEDGER,
                         peers=f"{server} peers with {', '.join(peers)}." if peers
                         else f"{server} peers with no server now.")
-    if settings.FC_PUBLICATIONS_PORT:
-        head += "\n" + WEBSITES
+    head += "\n" + WEBSITES
     if settings.DEBUG:
         head += "\n" + LOCAL_TEST
     if settings.FC_CHAT_CONTEXT:

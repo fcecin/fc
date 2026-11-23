@@ -18,7 +18,7 @@ from django.db.models import F
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
 
-from . import push
+from . import publications, push
 from .models import EntryCode
 from .signals import ensure_profile
 
@@ -75,6 +75,8 @@ def enter(request):
     send_mail(
         subject=f"{code} is your code for {settings.FC_NAME}",
         message=f"{code}\n\nType this code on {settings.FC_NAME} to enter. It works for 10 minutes.\n"
+                f"A page at {settings.FC_NAME}/link/ is a website of a person, not of fc. "
+                f"Never type the code there.\n"
                 f"If you did not ask for it, do nothing.\n",
         from_email=None, recipient_list=[email])
     return redirect("enter_code")
@@ -120,7 +122,7 @@ def _enter_as(request, email):
     except Exception:
         # CES didn't answer, so the next page visit tries again.
         pass
-    return redirect(request.session.pop("publication_return", None) or "home")
+    return redirect(publications.return_path(request.session.pop("publication_return", None)) or "home")
 
 
 @require_POST

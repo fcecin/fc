@@ -27,8 +27,8 @@ local function handle(conn, method, target)
   for key in pairs(names) do entries[#entries + 1] = "<li><code>" .. key .. "</code></li>" end
   table.sort(entries)
   local page = '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">' ..
-    '<title>Guestbook</title><link rel="stylesheet" href="/style.css"><h1>Guestbook</h1>' ..
-    '<form method="post" action="/sign"><button>Sign the guestbook</button></form><ul>' ..
+    '<title>Guestbook</title><link rel="stylesheet" href="style.css"><h1>Guestbook</h1>' ..
+    '<form method="post" action="sign"><button>Sign the guestbook</button></form><ul>' ..
     table.concat(entries) .. '</ul>'
   reply(conn, "200 OK", "Content-Type: text/html; charset=utf-8\r\n", page)
 end

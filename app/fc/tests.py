@@ -543,6 +543,8 @@ class Enter(Base):
         r = c.post("/enter", {"email": "Zoe@X.org"})
         self.assertRedirects(r, "/enter/code", fetch_redirect_response=False)
         self.assertEqual(mail.outbox[-1].to, ["zoe@x.org"])
+        # A website is on fc's own address, so the email says where the code never goes.
+        self.assertIn("/link/ is a website of a person, not of fc. Never type the code there.", mail.outbox[-1].body)
         r = c.post("/enter/code", {"code": self.code_of().lower().replace("-", "")})
         self.assertRedirects(r, "/", fetch_redirect_response=False)
         u = get_user_model().objects.get(email="zoe@x.org")
@@ -1319,7 +1321,7 @@ class ChatCesh(Base):
         self.assertEqual(result, {"role": "tool", "tool_call_id": "call_1",
                                   "content": 'ran `cesh query`: exit 0\n{"balance":5}'})
         rules = self.fake.requests[0]["messages"][0]["content"]
-        self.assertTrue(rules.endswith("notes."))   # no installation text here
+        self.assertTrue(rules.endswith("\n" + kernel.WEBSITES))   # no installation text here
         # The shells see app/fc/shell at /opt/fcsh.
         self.assertIn("/opt/fcsh/FC.md", rules)
         self.assertTrue(os.path.isfile(os.path.join(os.path.dirname(aishell.__file__), "shell", "FC.md")))
@@ -1336,7 +1338,7 @@ class ChatCesh(Base):
         with self.settings(FC_CHAT_CONTEXT="Read /library/x.md first."):
             self.turn(u, "hi")
         rules = self.fake.requests[-1]["messages"][0]["content"]
-        self.assertTrue(rules.endswith("notes.\nRead /library/x.md first."), rules[-80:])
+        self.assertTrue(rules.endswith("\n" + kernel.WEBSITES + "\nRead /library/x.md first."), rules[-80:])
 
     def test_any_command_runs(self):
         u = self.person("ana")

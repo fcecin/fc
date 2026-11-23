@@ -283,3 +283,13 @@ input:focus, textarea:focus { outline: 3px solid var(--sun); outline-offset: 0; 
   text-align: center; font: 16px/1.5 var(--ui); color: var(--ink-0); }
 .elsewhere p { margin: 0 0 14px; }
 .probe button.again { font-size: 12px; padding: 2px 8px; margin: 2px 0 4px; }
+
+/* The payment review (pay.html). A website can put its own button where the
+   approve button opens, and ask for a double click. So the buttons stay
+   hidden for one second after the page opens, and the second click does
+   not approve. */
+.pay-what { font: italic 700 20px Georgia, serif; }
+.pay-decide form { margin: 0; }
+.pay-decide button { animation: pay-arm 1s steps(1, end); }
+@keyframes pay-arm { from { visibility: hidden; } to { visibility: visible; } }
+.pay-key { overflow-wrap: anywhere; }

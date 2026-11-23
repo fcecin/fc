@@ -1,6 +1,7 @@
 """A person's CES account: their server, their balances and credit moves."""
 
 import re
+import time
 
 from django.conf import settings
 from django.core.cache import cache
@@ -85,6 +86,22 @@ def move(profile, from_server, to_server, amount):
         raise AccountError(e.code, _why(e.code))
     forget(profile, from_server, to_server)
     return r["balance"]
+
+
+def arrives(profile, server, at_least, seconds):
+    """Wait up to `seconds` until the person's balance on `server` is at least
+    `at_least` raw. CES takes a move from the first server at once, and the
+    credit arrives at the second one when the two servers settle, which is
+    usually at once too. True when it is there."""
+    end = time.monotonic() + seconds
+    while True:
+        forget(profile, server)
+        _, raw = balance(profile, server)
+        if raw is not None and raw >= at_least:
+            return True
+        if time.monotonic() >= end:
+            return False
+        time.sleep(0.2)
 
 
 def _why(code):

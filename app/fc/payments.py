@@ -1,22 +1,21 @@
 """Payments that a website asks for, and the visitor's decision in fc.
 
 A website asks with a reply of type MEDIA to a form post of a visit. fc keeps
-the request as a Payment and shows it in its own bar, outside the website's
-frame. Only the visitor's approval there sends the paid call, and fc sends it
-at most once: the approval changes the payment from pending to sending before
-the call goes out, and only one request can make that change."""
+the request as a Payment and sends the browser to fc's own review page.
+Only the visitor's approval there, a form of fc with fc's CSRF token, sends
+the paid call. fc sends it at most once: the approval changes the payment
+from pending to sending before the call goes out, and only one request can
+make that change."""
 
 import base64
 from datetime import timedelta
 import json
 import re
 
-from django.conf import settings
 from django.db import IntegrityError, transaction
-from django.http import Http404, HttpResponse, JsonResponse
-from django.shortcuts import render
+from django.http import Http404, HttpResponse, HttpResponseRedirect
+from django.shortcuts import redirect, render
 from django.utils import timezone
-from django.utils.html import escape
 from django.views.decorators.http import require_GET, require_POST
 
 from . import account, bridge, credits, publications, webdial
@@ -28,10 +27,18 @@ AMOUNT = re.compile(r"[1-9][0-9]{0,15}")
 # A path on the website, with no "//" at its start (that names another host).
 BACK = re.compile(r"/(?![/\\])[!-~]{0,511}")
 # The paid call waits for the program. The bridge exchange stops after
-# CALL_TIMEOUT. A payment that is still sending after SEND_LIMIT has an unknown
-# outcome: the process that sent it stopped before it kept the result.
+# CALL_TIMEOUT. Before the call, fc can move credit to the website's server
+# (a bridge op of up to MOVE_TIMEOUT) and wait for it there (up to
+# webdial.ARRIVAL). A payment that is still sending after SEND_LIMIT has an
+# unknown outcome: the process that sent it stopped before it kept the
+# result.
 CALL_TIMEOUT = 60
-SEND_LIMIT = timedelta(seconds=CALL_TIMEOUT + 60)
+MOVE_TIMEOUT = 20
+SEND_LIMIT = timedelta(seconds=MOVE_TIMEOUT + webdial.ARRIVAL + CALL_TIMEOUT + 60)
+# CES takes its fee for a call from the payer before it takes the amount, and
+# keeps the fee also when the amount is not there. fc moves the amount and
+# this much more for the fee. Raw units: 0.01 credit.
+FEE_ALLOWANCE = 1_000_000
 # A request that waits this long for a decision is declined, so an old request
 # never opens on a later page load.
 PENDING_LIFE = timedelta(minutes=10)
@@ -43,8 +50,6 @@ NOT_MOVED = {
     "CES_ERROR_ORIGIN_NOT_FOUND", "CES_ERROR_INSUFFICIENT_BALANCE", "CES_ERROR_BAD_INPUT",
     "CES_ERROR_COMPUTE_INSTANCE_NOT_FOUND", "CES_ERROR_UNSUPPORTED", "CES_ERROR_UNREACHABLE",
 }
-# The payments that the visitor can still decide, or that fc sends now.
-OPEN = (Payment.PENDING, Payment.SENDING)
 
 
 class Terms:
@@ -66,19 +71,23 @@ class Terms:
             raise ValueError("bad description")
         if not isinstance(amount, str) or not AMOUNT.fullmatch(amount) or int(amount) > credits.MAX_RAW:
             raise ValueError("bad amount")
-        if not isinstance(back, str) or not BACK.fullmatch(back):
+        if not isinstance(back, str) or not BACK.fullmatch(back) or not publications.website_path(back):
             raise ValueError("bad return path")
         self.order, self.description, self.amount, self.back = order, text, int(amount), back
 
 
+def review_path(payment):
+    return f"{publications.REVIEW}?id={payment.pk}"
+
+
 def ask(publication, payer, body):
-    """Keep the payment that a website's form post asks for, and give the
-    page that the website's frame shows meanwhile. A second request for the
-    same order gives the payment that fc keeps already."""
+    """Keep the payment that a website's form post asks for, and send the
+    browser to fc's review of it. A second request for the same order gives
+    the payment that fc keeps already."""
     try:
         terms = Terms(body)
     except ValueError:
-        return frame_page(502, "The website asked for a payment that fc cannot read.")
+        return _text(502, "The website asked for a payment that fc cannot read.")
     key = dict(server=publication.server, payee=publication.program_key, payer=payer, order=terms.order)
     fields = dict(publication=publication, site=f"{publication.owner.handle}/{publication.name}",
                   server_key=publication.server_key, source=publication.source,
@@ -88,23 +97,14 @@ def ask(publication, payer, body):
             payment, _ = Payment.objects.get_or_create(**key, defaults=fields)
     except IntegrityError:
         payment = Payment.objects.get(**key)
-    if (payment.description, payment.amount) != (terms.description, terms.amount):
-        return frame_page(409, "This order is open already with other terms. Ask the website for a new order.")
-    state = current(payment).state
-    return frame_page(200, {
-        Payment.PENDING: "Approve or decline this payment in the fc bar above the website.",
-        Payment.SENDING: "fc sends this payment now.",
-        Payment.PAID: "You paid for this order already.",
-        Payment.DECLINED: "You declined this order. Ask the website for a new order.",
-        Payment.FAILED: "This payment did not go through. Ask the website for a new order.",
-        Payment.UNKNOWN: "fc sent this payment, and no result came back. fc will not send it again.",
-    }[state])
+    if ((payment.description, payment.amount, payment.publication_id, payment.server_key)
+            != (terms.description, terms.amount, publication.pk, publication.server_key)):
+        return _text(409, "This order is open already with other terms. Ask the website for a new order.")
+    return HttpResponseRedirect(review_path(payment), status=303)
 
 
-def frame_page(status, text):
-    page = ('<!doctype html><meta charset="utf-8"><title>Payment</title>'
-            '<p style="font: 1rem system-ui, sans-serif; margin: 2rem">' + escape(text) + "</p>")
-    return HttpResponse(page, status=status, content_type="text/html; charset=utf-8")
+def _text(status, words):
+    return HttpResponse(words, status=status, content_type="text/plain; charset=utf-8")
 
 
 def current(payment):
@@ -121,19 +121,58 @@ def current(payment):
     return payment
 
 
+def _call(payment, pid):
+    return bridge.call("call", timeout=CALL_TIMEOUT, sealed=payment.payer.sealed, server=payment.server,
+                       server_key=payment.server_key, pid=pid, value=payment.amount,
+                       memo_b64=base64.b64encode(payment.order.encode()).decode())
+
+
+def shortfall(payment, balance):
+    """The credit that fc moves to the website's server before the paid call,
+    for a payer who has `balance` raw there: what they lack for the amount
+    and the fee. 0 when they have enough there, or when that server is
+    their own server, or when their balance there is unknown."""
+    if balance is None or account.here(payment.payer) == payment.server:
+        return 0
+    return max(0, payment.amount + FEE_ALLOWANCE - balance)
+
+
+def fund(payment):
+    """Move what the payer lacks on the website's server from the payer's own
+    server, and wait for it there. Returns None when the call can go out,
+    else the error of the payment. fc reads the balance before the call and
+    never sends a call again, so a refusal of a call is never a reason to
+    move credit."""
+    account.forget(payment.payer, payment.server)
+    _, balance = account.balance(payment.payer, payment.server)
+    need = shortfall(payment, balance)
+    if not need:
+        return None
+    try:
+        account.move(payment.payer, account.here(payment.payer), payment.server, need)
+    except account.AccountError as e:
+        return f"MOVE_{e.code}"[:64]
+    if not account.arrives(payment.payer, payment.server, balance + need, webdial.ARRIVAL):
+        return "MOVE_PENDING"
+    return None
+
+
 def send(payment):
     """Send the approved payment: one paid call, as the payer, to the program
-    that has the published program key. fc never sends it again."""
+    that has the published program key. When the payer lacks credit on the
+    website's server, fc moves it there first, and the call goes out only
+    when it is there. fc never sends the call again."""
     try:
-        pid = webdial.live_pid(payment.server, payment.source, payment.payee)
+        pid = webdial.live_pid(payment.server, payment.server_key, payment.source, payment.payee)
     except bridge.BridgeError as e:
         return finish(payment, Payment.FAILED, error=e.code)
     if pid is None:
         return finish(payment, Payment.FAILED, error="WEBSITE_OFFLINE")
+    error = fund(payment)
+    if error:
+        return finish(payment, Payment.FAILED, error=error)
     try:
-        r = bridge.call("call", timeout=CALL_TIMEOUT, sealed=payment.payer.sealed, server=payment.server,
-                        server_key=payment.server_key, pid=pid, value=payment.amount,
-                        memo_b64=base64.b64encode(payment.order.encode()).decode())
+        r = _call(payment, pid)
     except bridge.BridgeError as e:
         state = Payment.FAILED if e.code in NOT_MOVED else Payment.UNKNOWN
         return finish(payment, state, error=e.code)
@@ -146,65 +185,59 @@ def finish(payment, state, reply="", error=""):
     # the send is late.
     Payment.objects.filter(pk=payment.pk, state__in=(Payment.SENDING, Payment.UNKNOWN)).update(
         state=state, reply=reply, error=error)
-    account.forget(payment.payer, payment.server)
+    account.forget(payment.payer, payment.server, account.here(payment.payer))
 
 
-def control(request):
-    """The payer of a request on fc's own host, or 404."""
-    if not settings.FC_PUBLICATIONS_PORT or request.get_host() != publications.control_host():
-        raise Http404
-    if not request.user.is_authenticated:
-        raise Http404
-    return request.user.profile
+def back_url(payment):
+    """The website page after a decision, or None when the publication of the
+    payment is gone. A new publication with the same name is another website."""
+    page = payment.publication
+    if page is None or not publications.website_path(payment.back):
+        return None
+    return publications.mount(page.owner.handle, page.name) + payment.back
 
 
 def mine(request, pk):
+    """The payment `pk` of the signed-in person, or 404."""
+    if not request.user.is_authenticated:
+        raise Http404
     try:
-        return Payment.objects.select_related("payer", "publication").get(pk=pk, payer=control(request))
+        return Payment.objects.select_related("payer", "publication__owner").get(
+            pk=pk, payer=request.user.profile)
     except Payment.DoesNotExist:
         raise Http404
 
 
-def as_json(payment):
-    payment = current(payment)
+@require_GET
+def review(request):
+    """fc's page for one payment: what the website asks for, the approval and
+    the decline while it waits, and the outcome after."""
+    if not request.user.is_authenticated:
+        return redirect("home")
+    pk = request.GET.get("id", "")
+    if not (pk.isascii() and pk.isdigit()) or len(pk) > 18:
+        raise Http404
+    payment = current(mine(request, int(pk)))
     _, balance = account.balance(payment.payer, payment.server)
-    frame = None
-    if payment.publication_id:
-        frame = "http://" + publications.content_host(payment.publication_id) + payment.back
-    return {
-        "id": payment.pk, "site": payment.site, "server": payment.server, "payee": payment.payee,
-        "order": payment.order, "description": payment.description,
-        "amount": credits.to_text(payment.amount), "state": payment.state,
-        "reply": payment.reply, "error": payment.error, "frame": frame,
-        "balance": credits.to_text(balance) if balance is not None else None,
-    }
-
-
-def reply(data):
-    response = JsonResponse(data)
-    response["Cache-Control"] = "no-store"
+    response = render(request, "fc/pay.html", {
+        "p": payment, "back": back_url(payment), "home": account.here(payment.payer), "balance": balance,
+        "moves": shortfall(payment, balance), "fee": FEE_ALLOWANCE,
+    })
+    response["Cache-Control"] = "private, no-store"
     return response
 
 
-@require_GET
-def open_for_site(request, pk):
-    """The payments of a website that the visitor can still decide, or that fc
-    sends now. The fc page asks each time the website's frame loads a page."""
-    payer = control(request)
-    payments = Payment.objects.filter(payer=payer, publication_id=pk, state__in=OPEN).order_by("pk")
-    data = [as_json(p) for p in payments.select_related("payer")]
-    return reply({"payments": [d for d in data if d["state"] in OPEN]})
-
-
-@require_GET
-def status(request, pk):
-    """One payment of the visitor, as it is now."""
-    return reply(as_json(mine(request, pk)))
+def _after(payment, done):
+    """Back to the website after the decision `done`, else to the review."""
+    back = back_url(payment)
+    if payment.state == done and back:
+        return HttpResponseRedirect(back, status=303)
+    return HttpResponseRedirect(review_path(payment), status=303)
 
 
 @require_POST
 def approve(request, pk):
-    payment = mine(request, pk)
+    payment = current(mine(request, pk))
     now = timezone.now()
     # Only one request can change a pending payment to sending: a second click,
     # tab or retry reads the payment as it is.
@@ -215,7 +248,7 @@ def approve(request, pk):
         payment.refresh_from_db()
         send(payment)
     payment.refresh_from_db()
-    return reply(as_json(payment))
+    return _after(payment, Payment.PAID)
 
 
 @require_POST
@@ -224,14 +257,15 @@ def decline(request, pk):
     Payment.objects.filter(pk=payment.pk, state=Payment.PENDING).update(
         state=Payment.DECLINED, decided=timezone.now())
     payment.refresh_from_db()
-    return reply(as_json(payment))
+    return _after(payment, Payment.DECLINED)
 
 
 @require_GET
 def receipts(request):
     """The visitor's payments, the newest first."""
-    payer = control(request)
-    payments = [current(p) for p in Payment.objects.filter(payer=payer).order_by("-pk")[:200]]
+    if not request.user.is_authenticated:
+        return redirect("home")
+    payments = [current(p) for p in Payment.objects.filter(payer=request.user.profile).order_by("-pk")[:200]]
     response = render(request, "fc/payments.html", {"payments": payments})
-    response["Cache-Control"] = "no-store"
+    response["Cache-Control"] = "private, no-store"
     return response

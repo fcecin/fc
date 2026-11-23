@@ -10,7 +10,7 @@
   <h2>{{ p.site }}: {{ p.description }}</h2>
   <p>{{ p.amount|credits }} credits to the program <code>{{ p.payee|slice:":16" }}…</code> on {{ p.server }}, order <code>{{ p.order }}</code></p>
   <p>{% if p.state == "paid" %}Paid.{% if p.reply %} The website replied: {{ p.reply }}{% endif %}
-  {% elif p.state == "pending" %}Waiting for your decision on the website's page.
+  {% elif p.state == "pending" %}Waiting for your decision: <a href="/payments/review?id={{ p.pk }}">approve or decline</a>.
   {% elif p.state == "declined" %}Declined. No credits moved.
   {% elif p.state == "sending" %}fc sends this payment now.
   {% elif p.state == "failed" %}The payment did not go through, and the amount did not move ({{ p.error }}).

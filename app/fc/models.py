@@ -157,7 +157,7 @@ class Payment(models.Model):
     order = models.CharField(max_length=64)
     description = models.CharField(max_length=200)
     amount = models.PositiveBigIntegerField()
-    # The website path that the frame opens after the decision.
+    # The website path that the visitor sees after the decision.
     back = models.CharField(max_length=512, default="/")
     state = models.CharField(max_length=8, default=PENDING)
     created = models.DateTimeField(auto_now_add=True)
@@ -171,14 +171,3 @@ class Payment(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=["server", "payee", "payer", "order"],
                                                name="unique_payment")]
-
-
-class PageVisit(models.Model):
-    """One browser handoff. Removing the login session revokes its visits."""
-    publication = models.ForeignKey(Publication, on_delete=models.CASCADE)
-    session = models.ForeignKey("sessions.Session", on_delete=models.CASCADE)
-    viewer = models.ForeignKey(Profile, on_delete=models.CASCADE)
-    ticket = models.CharField(max_length=64, unique=True, null=True)
-    cookie = models.CharField(max_length=64, unique=True, null=True)
-    expires = models.DateTimeField(db_index=True)
-    target = models.TextField()

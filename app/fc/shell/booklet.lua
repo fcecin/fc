@@ -1,7 +1,7 @@
 -- Publish this file as an fc website that sells a booklet for 2 credits.
 -- A click on Buy asks fc for the payment. fc shows the request to the visitor
--- in its own bar, and an approval sends a paid call with the order as the
--- memo. A paid call cannot be refused, so any payment of the price is a
+-- on its own review page, and an approval sends a paid call with the order
+-- as the memo. A paid call cannot be refused, so any payment of the price is a
 -- purchase. The buyers stay in a store, so a new instance keeps them.
 local PRICE = 200000000   -- raw units: 2 credits
 local incoming = {}
@@ -25,10 +25,12 @@ end
 local function page(conn, title, body)
   reply(conn, "200 OK", "Content-Type: text/html; charset=utf-8\r\n",
     '<!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">' ..
-    "<title>" .. title .. '</title><link rel="stylesheet" href="/style.css"><h1>' .. title .. "</h1>" .. body)
+    "<title>" .. title .. '</title><link rel="stylesheet" href="style.css"><h1>' .. title .. "</h1>" .. body)
 end
 
-local BUY = '<form method="post" action="/buy"><button>Buy the booklet for 2 credits</button></form>'
+-- The links and the form action are relative: the pages are under the link
+-- of the website, such as /link/ana/shop/ on fc.
+local BUY = '<form method="post" action="buy"><button>Buy the booklet for 2 credits</button></form>'
 
 local function handle(conn, method, target)
   local path = target:match("^[^?]*")
@@ -52,7 +54,7 @@ local function handle(conn, method, target)
   end
   if method == "GET" and path == "/" then
     return page(conn, "The club shop", "<p>The club booklet tells you when we meet.</p>" .. BUY ..
-      '<p><a href="/booklet">Read the booklet</a></p>')
+      '<p><a href="booklet">Read the booklet</a></p>')
   end
   reply(conn, "404 Not Found", "Content-Type: text/plain\r\n", "Page unavailable.")
 end

@@ -1,0 +1,26 @@
+{% extends "fc/base.html" %}
+{% block head_title %}payment | {% instance %}{% endblock %}
+{% block content %}
+<section class="panel pay">
+  <h2>{{ p.site }} asks for a payment</h2>
+  <p class="pay-what">{{ p.description }}</p>
+  <p><strong>{{ p.amount|credits }} credits</strong>, and the server's fee for the call (at most {{ fee|credits }} credits), to the program of the website <code>{{ p.site }}</code> on {{ p.server }}. Order <code>{{ p.order }}</code>.</p>
+  <p class="fine">The key of the program: <code class="pay-key">{{ p.payee }}</code></p>
+  {% if p.state == "pending" %}
+  <p class="fine">{% if balance is None %}fc cannot read your balance on {{ p.server }} now. When it is too low there, the payment fails, and the amount does not move.{% else %}You have {{ balance|credits }} credits on {{ p.server }}.{% if moves %} fc first moves {{ moves|credits }} credits of yours from {{ home }} to {{ p.server }}. They stay yours there, except the amount and the fee.{% endif %}{% endif %} The website gets the credits when you approve. Only this page of fc can approve a payment.</p>
+  <div class="actions pay-decide">
+    <form method="post" action="/payments/{{ p.pk }}/approve">{% csrf_token %}<button class="primary" type="submit">approve</button></form>
+    <form method="post" action="/payments/{{ p.pk }}/decline">{% csrf_token %}<button type="submit">decline</button></form>
+  </div>
+  {% else %}
+  <p>{% if p.state == "paid" %}Paid.{% if p.reply %} The website replied: {{ p.reply }}{% endif %}
+  {% elif p.state == "declined" %}Declined. No credits moved.
+  {% elif p.state == "sending" %}fc sends this payment now.
+  {% elif p.state == "failed" and p.error == "MOVE_PENDING" %}fc moved credit of yours to {{ p.server }} for this payment, and it was not there yet. It stays yours there. The payment did not go out. Ask the website for a new order in a moment.
+  {% elif p.state == "failed" and p.error|slice:":5" == "MOVE_" %}fc could not move credit of yours to {{ p.server }} ({{ p.error|slice:"5:" }}). The payment did not go out.
+  {% elif p.state == "failed" %}The payment did not go through, and the amount did not move ({{ p.error }}).
+  {% else %}fc sent this payment, and no result came back ({{ p.error|default:"fc stopped before the result" }}). fc will not send it again. See your balance on {{ p.server }} before you buy this again.{% endif %}</p>
+  {% endif %}
+  <p>{% if back %}<a href="{{ back }}">back to {{ p.site }}</a> · {% endif %}<a href="/payments">all your payments</a></p>
+</section>
+{% endblock %}

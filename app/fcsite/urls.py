@@ -4,11 +4,11 @@ from fc import api, enter, payments, publications, views
 
 urlpatterns = [
     path("", views.home, name="home"),
+    path("link/<slug:handle>/<slug:name>", publications.slashless),
     path("link/<slug:handle>/<slug:name>/", publications.open_page),
     path("link/<slug:handle>/<slug:name>/<path:path>", publications.open_page),
     path("payments", payments.receipts),
-    path("payments/site/<int:pk>", payments.open_for_site),
-    path("payments/<int:pk>", payments.status),
+    path("payments/review", payments.review),
     path("payments/<int:pk>/approve", payments.approve),
     path("payments/<int:pk>/decline", payments.decline),
     path("net", views.network, name="net"),

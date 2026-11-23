@@ -13,6 +13,18 @@
 		reverse_proxy 127.0.0.1:8001
 	}
 
+	# The websites at /link/. A request waits for its CES program for up to
+	# 15 s, and it holds a thread of the app while it waits. So at most 8 of
+	# them reach the app at once, and the other pages of fc keep free
+	# threads. The others wait here, and they do not fail.
+	handle /link/* {
+		reverse_proxy 127.0.0.1:8000 {
+			transport http {
+				max_conns_per_host 8
+			}
+		}
+	}
+
 	handle {
 		reverse_proxy 127.0.0.1:8000
 	}

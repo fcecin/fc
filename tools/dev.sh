@@ -66,6 +66,7 @@ start_web() {
     "$FC/tmp/venv/bin/python" manage.py migrate --run-syncdb --noinput > "$DEV/migrate.log" 2>&1
   FC_DEBUG=1 FC_BRIDGE_SOCKET="$DEV/bridge.sock" FC_DB="$DEV/fc.sqlite3" \
     FC_HUB_SOCKET="$DEV/hub.sock" FC_HUB_URL=ws://127.0.0.1:8766/hub FC_CESH_SOCKET="$DEV/cesh.sock" \
+    FC_URL=http://127.0.0.1:8765 \
     nohup "$FC/tmp/venv/bin/python" manage.py runserver 127.0.0.1:8765 --noreload \
     > "$DEV/web.log" 2>&1 &
   echo $! > "$DEV/web.pid"
