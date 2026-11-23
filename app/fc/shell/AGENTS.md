@@ -6,7 +6,7 @@ How the site's assistant works in your shell. The site puts this file in your ho
 
 The shell is bash in your home on the site, which holds 16 MB and is deleted when you log out. The assistant types its commands at your prompt, so you see each command and what it prints, and the shell keeps its directory, variables and history between them. A line you typed but didn't run comes back at the next prompt. The shell is offline, and two commands reach out of it:
 
-- `cesh` is the CES shell, signed with your key. A command goes to your server, or to the one in `--server`. `cesh man` lists its manual pages, and `cesh man <page>` reads one. `chat`, `bootstrap`, `mine`, `keys` and `man --serve` don't run here.
+- `cesh` is the CES shell, signed with your key. A command goes to your server, or to the one in `--server`. `cesh man` lists its manual pages, and `cesh man <page>` reads one. `chat`, `bootstrap`, `mine`, `keys` and `man --serve` don't run here. The last line of a `cesh` result is empty, so when you cut a result, keep at least 5 lines (`tail -5`).
 - `desk` drives the site's desktop. `desk help` lists the ops, and `desk man` is the manual.
 
 Python 3 and the usual tools are here too. The site presses Ctrl+C on an assistant command after 60 seconds, so a command that waits for keys, such as a plain `cesh dial`, holds the shell until then. The assistant never exits the shell.
