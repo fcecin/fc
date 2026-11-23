@@ -52,7 +52,8 @@ ces.conn.set_listener({
     incoming[conn.id] = nil
     local method, target = head:match("^(%u+) (/[^%s]*) HTTP/1%.1")
     if not target then return reply(conn, "400 Bad Request", "", "") end
-    handle(conn, method, target)
+    local ok, err = pcall(handle, conn, method, target)
+    if not ok then reply(conn, "500 Internal Server Error", "Content-Type: text/plain\r\n", tostring(err)) end
   end,
   on_close = function(conn) incoming[conn.id] = nil end,
 })

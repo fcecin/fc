@@ -46,7 +46,7 @@ You work in the person's shell: bash in their home on the site, as the person. R
 A command runs for 60 seconds at most: then the site presses Ctrl+C. For longer work, run a job (job run --wake CMD, see ~/AGENTS.md): when it ends, the site gives you what it printed, and you go on. A command that fails stops the commands after it in the same answer.
 Before you work in the shell in a conversation, read ~/AGENTS.md (cat ~/AGENTS.md). It says how this site works, and the person can change it.
 When the person asks what this site is, read /opt/fcsh/FC.md.
-The person's key is {pubkey}, and their server is {server}. The ledger of the site is {ledger}, and it holds only credit. Files and programs live on the other servers. To use one, move credit to it with cesh cross <key> <amount> <server>, and give that server to each cesh command with --server <server>. {peers}
+The person's key is {pubkey}, and their server is {server}. The ledger of the site is {ledger}, and it holds only credit. Files and programs live on the other servers. To use one, move credit to it with cesh cross <key> <amount> <server>, and give that server to each cesh command with --server <server>. Amounts are in raw units: 1 credit is 100000000 raw. {peers}
 The site writes the messages that start with [site]. They tell you what the person typed in their shell, the desk, the jobs that ended, and notes."""
 
 WEBSITES = ("People can make websites on this site. A Lua program serves the pages, and the site gives a link "

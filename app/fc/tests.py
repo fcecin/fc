@@ -1059,6 +1059,21 @@ class Desk(Base):
         self.assertIn("cat ~/AGENTS.md", self.fake.prompts[0])
         self.assertNotIn("new text <name>", self.fake.prompts[0])
 
+    def test_a_line_of_more_than_one_desk_op_goes_back_to_the_model(self):
+        """A line that only starts with a desk op, such as a read with more
+        commands after it, is not a change of the desk."""
+        u = self.person("ana", server="")
+        line = "desk website; echo ---; desk help"
+        self.fake.answers = [sh(line), "I read the guide."]
+        self.run_out[line] = ("exit 0", "# Websites\n---\nthe desk ops\n")
+        s, j = self.api("POST", "/api/chat", {"text": "make a website"}, client=self.login(u))
+        self.assertEqual(j["lines"][-1]["text"], "I read the guide.")
+        for line, op in (("desk website", "website"), ('desk new text milk "buy; milk & tea"', "new"),
+                         ("desk move a 1 2 && cesh query @0", None), ("desk ls | head -3", None),
+                         ("desk new text a b\ncesh query @0", None), ("cesh query; desk ls", None),
+                         ("desk website > /dev/null", None), ("desk", None), ("desk new text 'x", None)):
+            self.assertEqual(aishell.desk_op(line), op, line)
+
     def test_a_read_goes_back_to_the_model(self):
         u = self.person("ana", server="")
         tok = self.login(u)

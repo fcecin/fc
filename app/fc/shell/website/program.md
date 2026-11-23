@@ -4,6 +4,8 @@
 - Write one reply with a status line, `Content-Type`, `Content-Length` and the body. Then close the connection with `conn:close()`.
 - `conn.pubkey` is the key of the visitor, as 32 raw bytes. Every dial has it, also a dial from `cesh dial`. A byte of a key can have any value, also the value of a space or a newline, so do not check the bytes. To show a key as text, use `key:gsub(".", function(c) return string.format("%02x", c:byte()) end)`. Use the key to know who posts, who owns what, and who paid. The request has no cookies, and the site drops the cookies of a reply.
 - A request body can hold 1 MiB and a reply 8 MiB. The program answers in 15 seconds, or the visitor gets an error.
+- A Lua error ends the program, and nobody sees the error. So run the code of a page in `pcall`, and send the error as a page with the status 500, as the example does. The last line of the program is `ces.run()`.
+- There is no `os` library. `ces.now()` is the time, in microseconds since 1970.
 
 ## Paths and links
 

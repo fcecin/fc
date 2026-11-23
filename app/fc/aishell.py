@@ -1,6 +1,8 @@
 """The model's commands, typed at the person's prompt (fc/shellhub.py). A
 command that fails stops the rest of the answer."""
 
+import shlex
+
 from . import ceshargs, desk, push
 
 RAN = "run"                # the kind of chat line (fc/models.py) that a line makes
@@ -14,6 +16,20 @@ def cap(text, n):
     if len(data) <= n:
         return text
     return data[:n].decode(errors="ignore") + f"\n[... {len(data) - n} more bytes]"
+
+
+def desk_op(line):
+    """The op of a line that is one desk command, or None. A line with a
+    second command, a pipe or a redirect is more than its first op."""
+    lex = shlex.shlex(line, posix=True, punctuation_chars=True)
+    lex.whitespace_split = True
+    try:
+        words = list(lex)
+    except ValueError:
+        return None
+    if "\n" in line or len(words) < 2 or words[0] != "desk" or any(not w.strip("();<>|&") for w in words if w):
+        return None
+    return words[1]
 
 
 class Shell:
@@ -47,6 +63,5 @@ class Shell:
             return self.fail(head, text)
         # A desk op that changes the desk needs no answer, since the model
         # knows the desk that it made.
-        prog, _, args = head.partition(" ")
-        op = args.split()[0] if args.split() else ""
-        return RAN, text, not (prog == "desk" and op and op not in desk.READS)
+        op = desk_op(line.strip("\n"))
+        return RAN, text, op is None or op in desk.READS
