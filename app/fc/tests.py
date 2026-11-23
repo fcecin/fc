@@ -1407,6 +1407,19 @@ class ChatCesh(Base):
         self.assertEqual([x.kind for x in lines], ["user", "desk", "model", "run", "model", "run", "note"])
         self.assertEqual(lines[-1].text, "The assistant stopped after 2 steps for this line. Write to it to go on.")
 
+    def test_a_long_turn_holds_the_next_line_back_to_its_end(self):
+        """The hold of a turn ends BUSY_SECS after its last renewal. So each
+        model call and each command renews it."""
+        u = self.person("ana")
+        self.fake.answers = [sh("cesh query", "ls"), sh("cesh query"), "done"]
+        renewed = []
+        touch = kernel.cache.touch
+        with mock.patch.object(kernel.cache, "touch", side_effect=lambda k, t: renewed.append((k, t)) or touch(k, t)):
+            self.turn(u, "look")
+        # Three model calls and three commands.
+        self.assertEqual(renewed, [(f"chat:busy:{u.pk}", kernel.BUSY_SECS)] * 6)
+        self.assertIsNone(kernel.cache.get(f"chat:busy:{u.pk}"))
+
     def test_a_line_that_fails_stops_the_lines_after_it(self):
         u = self.person("ana")
         put = "cesh file put - a.lua <<END\nces.run()\nEND"

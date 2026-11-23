@@ -31,9 +31,9 @@ MAX_WINDOW = 40         # the characters of the name of a window
 VISITOR = 0             # a visitor's user id
 # A shell job wakes the assistant (fc/shell/jobs.py). The hub waits while the
 # site runs the turn, and retries while another turn runs.
-WAKE_TIMEOUT = 1800     # the longest turn, MAX_CALLS model calls
+WAKE_TIMEOUT = 15000    # the longest turn, MAX_CALLS model calls
 WAKE_AGAIN = 5          # seconds between retries
-WAKE_TRIES = 120        # 10 minutes of retries
+WAKE_TRIES = WAKE_TIMEOUT // WAKE_AGAIN   # the retries wait for the longest turn
 # The close codes for a page.
 BAD_TICKET = 4001
 FULL = 4002

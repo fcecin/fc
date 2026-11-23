@@ -26,6 +26,8 @@ KEEP = 25
 DEFAULT_WINDOW = 65536
 DEFAULT_MAX_OUT = 8192
 DEFAULT_MAX_INPUT = 1024 * 1024
+# How long a turn holds back the person's next line. The turn renews it before
+# each model call and each command.
 BUSY_SECS = 400
 # The chat lines that a person keeps. Past it, the oldest lines go.
 MAX_LINES = 1000
@@ -33,7 +35,7 @@ MAX_LINES = 1000
 SITE = "[site]"
 # Model calls for one line of the person: the answer, plus one for each result
 # that the model reads.
-MAX_CALLS = 24
+MAX_CALLS = 200
 STOPPED = "The assistant stopped after {} steps for this line. Write to it to go on."
 MAX_OPS = 16           # desk commands run from one answer
 MAX_COMMANDS = 8       # other commands run from one answer
@@ -370,6 +372,7 @@ def _turn(profile, text, lock, shell="", job=""):
         if seen:
             yield "line", seen
         for _ in range(MAX_CALLS):
+            cache.touch(lock, BUSY_SECS)
             if _size(request(user)) / _bytes_per_token(user) * 100 > room(user) * COMPACT_AT:
                 folded = _fold(profile)
                 if folded:
@@ -388,7 +391,7 @@ def _turn(profile, text, lock, shell="", job=""):
             calls = [c for c in r.get("tool_calls") or [] if isinstance(c, dict) and c.get("id")]
             yield line(kind="model", text=(r.get("reply") or "").strip(), calls=calls or None,
                        reasoning=r.get("reasoning_content") or "", **_stats(r, req))
-            again = yield from _run(profile, calls)
+            again = yield from _run(profile, calls, lock)
             _seen(profile)   # the model made these changes, so it knows the desk
             if not again:
                 break
@@ -399,7 +402,7 @@ def _turn(profile, text, lock, shell="", job=""):
         cache.delete(lock)
 
 
-def _run(profile, calls):
+def _run(profile, calls, lock):
     """Run the commands of the model's tool calls, in order, each with its
     result line. Returns True when the model reads a result before it goes
     on."""
@@ -407,6 +410,8 @@ def _run(profile, calls):
     again = False
     ops = commands = 0
     for c in calls:
+        cache.touch(lock, BUSY_SECS)
+
         def result(text):
             return "line", ChatLine.objects.create(user=profile.user, kind=aishell.RAN, call_id=c["id"],
                                                    text=text)
