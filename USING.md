@@ -39,6 +39,8 @@ For a working example, copy [the guestbook](app/fc/shell/website/guestbook.lua) 
 
 The command prints the link, `FC_URL/link/<your-handle>/board/`. `FC_URL` is `https://FC_NAME` unless the environment sets it. A local server with a port of its own sets it, for example `FC_URL=http://fc.localhost:8780`. Two visitors can sign the same guestbook with their own keys.
 
+When no instance of the program runs, for example after a restart of its server, a visit starts one as its owner. fc does that only for a file in the owner's home, and at most once in 30 seconds for each website.
+
 The pages share fc's origin, so each reply carries a strict policy. A page runs no scripts, loads styles and images only from its own website, and sends forms only to its own website and to fc's payment review. fc gives the browser only HTML, plain text, CSS and raster images, drops every header and cookie of the program, and puts each redirect of the program under the website's link. A form post reaches the program only when its `Origin` is fc's and its `Referer` is a page of the same website, so a page of one website cannot post to another website as its visitor. A request can hold 1 MiB and a reply 8 MiB, and the program answers in 15 seconds.
 
 CES lets a key dial a program only when the key has credit on the program's server. When a visitor has none there, fc moves 0.01 credit of theirs from their own server first. For a payment, fc moves only the credit that the visitor is short of, after the approval.

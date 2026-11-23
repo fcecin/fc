@@ -7,15 +7,19 @@ program's reply. No other header goes either way, so the program never
 gets fc's cookies, and the browser never gets a cookie of the program."""
 
 from http.client import HTTPConnection, HTTPException
+import logging
 import socket
 import threading
 import time
 from urllib.parse import urljoin, urlsplit
 
 from django.conf import settings
+from django.core.cache import cache
 from django.http import HttpResponse
 
 from . import account, bridge, launch, payments, publications
+
+log = logging.getLogger("fc.webdial")
 
 MAX_UPLOAD = 1 << 20
 MAX_REPLY = 8 << 20
@@ -26,6 +30,11 @@ HOST = "site"
 # there: CES lets a key dial a program only when it has credit on that
 # server. Raw units: 0.01 credit.
 VISIT_CREDIT = 1_000_000
+# fc starts the program of a website again at most once in this time, in
+# seconds, so that a program that ends at once does not start for each request.
+REVIVE_HOLD = 30
+# The seconds that a program has from its start to its first dial.
+START = 5
 REDIRECTS = (301, 302, 303, 307, 308)
 # The types that fc gives to the browser. A text type gets UTF-8.
 TYPES = {"text/html", "text/plain", "text/css",
@@ -51,6 +60,34 @@ def live_pid(server, server_key, source, program_key):
     instances = bridge.call("instances", server=server, server_key=server_key, path=source)["instances"]
     mine = [i for i in instances if i.get("program_key") == program_key]
     return max(mine, key=lambda i: i.get("started_us", 0))["pid"] if mine else None
+
+
+def revive(publication):
+    """Start the program of a website that does not run, as its owner, and
+    return its pid, or None when it does not start. CES starts no program
+    again after a restart of its server. fc starts only a file of the owner,
+    which its own balance pays for."""
+    owner = publication.owner
+    if not publication.source.startswith(f"/h/{owner.pubkey}/"):
+        return None
+    hold = f"starting:{publication.pk}"   # 1 while it starts, 0 after it did not
+    first = cache.add(hold, 1, REVIVE_HOLD)
+    if first:
+        try:
+            bridge.call("launch", sealed=owner.sealed, server=publication.server, path=publication.source)
+        except bridge.BridgeError as e:
+            log.warning("website %s: its program did not start: %s", publication.pk, e.code)
+            cache.set(hold, 0, REVIVE_HOLD)
+            return None
+    end = time.monotonic() + START
+    while cache.get(hold) and time.monotonic() < end:
+        pid = live_pid(publication.server, publication.server_key, publication.source, publication.program_key)
+        if pid is not None:
+            return pid
+        time.sleep(0.1)
+    if first:
+        cache.set(hold, 0, REVIVE_HOLD)
+    return None
 
 
 class NoCredit(Exception):
@@ -87,19 +124,29 @@ def fund_visit(profile, server):
 
 def fetch(profile, publication, method, target, headers, body):
     """The program's reply to one request, or None when the program does not
-    run. CES lets a key dial only with credit on the program's server. When
-    CES refuses the dial for that reason, the program did not get the
-    request, so fc gives the visitor credit there and dials once more."""
+    run and does not start. The program did not get the request when CES
+    refuses the dial. CES does that when the visitor has no credit on the
+    program's server, and then fc gives them some, once. It also does that
+    while a program starts, and then fc waits."""
     pid = live_pid(publication.server, publication.server_key, publication.source, publication.program_key)
+    starts_until = 0
     if pid is None:
-        return None
-    try:
-        return roundtrip(profile, publication, pid, method, target, headers, body)
-    except launch.LaunchError as e:
-        if str(e) != "CES_ERROR_INSUFFICIENT_BALANCE":
-            raise
-    fund_visit(profile, publication.server)
-    return roundtrip(profile, publication, pid, method, target, headers, body)
+        pid = revive(publication)
+        if pid is None:
+            return None
+        starts_until = time.monotonic() + START
+    funded = False
+    while True:
+        try:
+            return roundtrip(profile, publication, pid, method, target, headers, body)
+        except launch.LaunchError as e:
+            if str(e) == "CES_ERROR_INSUFFICIENT_BALANCE" and not funded:
+                fund_visit(profile, publication.server)
+                funded = True
+            elif str(e) == "CES_ERROR_NOT_LISTENING" and time.monotonic() < starts_until:
+                time.sleep(0.1)
+            else:
+                raise
 
 
 def exchange(request, profile, publication, target):

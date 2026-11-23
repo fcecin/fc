@@ -2,6 +2,7 @@
 the pages, the checks of a form post, the paths and the HTTP framing."""
 import socket
 import threading
+import time
 from unittest.mock import patch
 
 import os
@@ -68,6 +69,7 @@ class WebsiteTests(TestCase):
         self.viewer = self.person("ben", "b")
         self.page = Publication.objects.create(owner=self.author, name="board", server=SERVER, server_key="1" * 64,
                                                source="/p/board.lua", program_key="2" * 64)
+        self.home = "/h/" + self.author.pubkey + "/"
         self.client = Client()
         self.client.force_login(self.viewer.user)
         live = patch("fc.webdial.live_pid", return_value=8)
@@ -562,6 +564,53 @@ class WebsiteTests(TestCase):
             self.assertEqual(LIVE_PID(SERVER, "1" * 64, self.page.source, self.page.program_key), 5)
             self.assertIsNone(LIVE_PID(SERVER, "1" * 64, self.page.source, "4" * 64))
         self.assertEqual(call.call_args.kwargs, {"server": SERVER, "server_key": "1" * 64, "path": self.page.source})
+
+    def test_a_visit_starts_a_website_that_does_not_run(self):
+        """CES starts no program again after a restart of its server. So a
+        visit starts the program of a published website, as its owner."""
+        self.page.source = self.home + "board.lua"
+        self.page.save()
+        self.live.side_effect = [None, 9]
+        starting = launch.LaunchError("CES_ERROR_NOT_LISTENING")
+        with patch("fc.bridge.call", return_value={"ok": True, "pid": 9}) as call, \
+                patch("fc.webdial.roundtrip", side_effect=[starting, starting, reply()]) as trip, \
+                patch("fc.webdial.time.sleep"):
+            page = self.client.get("/link/ana/board/")
+        self.assertEqual((page.status_code, page.content), (200, b"<p>hi</p>"))
+        call.assert_called_once_with("launch", sealed="ana", server=SERVER, path=self.page.source)
+        self.assertEqual({c.args[2] for c in trip.call_args_list}, {9})
+        self.assertEqual({c.args[0] for c in trip.call_args_list}, {self.viewer})
+
+    def test_a_website_that_does_not_stay_up_starts_once_in_a_while(self):
+        """A program that ends at its start, or that CES refuses to launch,
+        does not start for each request."""
+        self.page.source = self.home + "board.lua"
+        self.page.save()
+        self.live.return_value = None
+        for answer in ({"return_value": {"ok": True, "pid": 9}},
+                       {"side_effect": bridge.BridgeError("CES_ERROR_COMPUTE_FUND_TOO_LOW")}):
+            cache.clear()
+            with patch("fc.bridge.call", **answer) as call, patch("fc.webdial.START", 0.01):
+                pages = [self.client.get("/link/ana/board/") for _ in range(3)]
+            self.assertEqual([p.status_code for p in pages], [503] * 3)
+            self.assertContains(pages[0], "The website is offline", status_code=503)
+            self.assertEqual([c.args[0] for c in call.call_args_list], ["launch"])
+        cache.clear()
+        with patch("fc.bridge.call", return_value={"ok": True, "pid": 9}) as call, patch("fc.webdial.START", 0.01), \
+                patch("fc.webdial.REVIVE_HOLD", 0.05):
+            self.client.get("/link/ana/board/")
+            time.sleep(0.1)
+            self.client.get("/link/ana/board/")
+        self.assertEqual(len(call.call_args_list), 2)
+
+    def test_a_visit_starts_only_a_file_of_the_owner(self):
+        self.live.return_value = None
+        for source in ("/p/board.lua", "/h/" + self.viewer.pubkey + "/board.lua", "/s/board.lua"):
+            self.page.source = source
+            self.page.save()
+            with patch("fc.bridge.call") as call:
+                self.assertEqual(self.client.get("/link/ana/board/").status_code, 503)
+            call.assert_not_called()
 
     def test_visit_shows_a_page_as_the_visitor_gets_it(self):
         program = Program(b"HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: 11\r\n\r\n<p>hi</p>\r\n")

@@ -6,6 +6,8 @@
 
 `desk unpublish <name>` withdraws the link. The program keeps running.
 
+When no instance of the file runs, for example after a restart of its server, the next visit starts one, and the balance of the file pays for it. So to stop a website, withdraw the link first, and then stop the program.
+
 ## Change the website
 
 1. Put the changed file, and launch it again. The link stays the same, and each visit goes to the newest instance of the file.
