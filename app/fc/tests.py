@@ -2002,6 +2002,29 @@ class HubShell(TestCase):
             task.cancel()
         asyncio.run(go())
 
+    def test_a_command_out_of_time_ends_when_the_host_started_with_no_ctrl_c(self):
+        """What starts the shell host can ignore Ctrl+C, as a program that a
+        script starts with `&` does. The shell does not."""
+        import asyncio
+        import signal
+
+        async def go():
+            old = signal.signal(signal.SIGINT, signal.SIG_IGN)   # the host inherits it
+            try:
+                task, port, h, _ = await self.start_hub()
+                page = await self.shell_page(port)
+                await self.until(page, "live")
+            finally:
+                signal.signal(signal.SIGINT, old)
+
+            async def run(line, timeout=20):
+                return (await self.site({"ask": {"run": {"uid": 5, "line": line, "timeout": timeout}}}))["ok"]
+            self.assertEqual((await run("for f in 1 2; do P=$(cat); done", timeout=1))["result"], "timeout")
+            self.assertEqual(await run("echo free$((1+1))", timeout=5), {"out": "free2\n", "result": "exit 0"})
+            await page.close()
+            task.cancel()
+        asyncio.run(go())
+
     def test_cesh_in_the_shell_reads_and_writes_the_files_of_the_shell(self):
         import asyncio
         import os

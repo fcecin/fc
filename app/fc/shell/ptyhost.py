@@ -64,6 +64,11 @@ class Host:
         self.pid, self.fd = pty.fork()
         if self.pid == 0:
             try:
+                # A signal that this host ignores stays ignored in bash and its
+                # programs, as Ctrl+C when a script started the host with `&`.
+                for sig in signal.valid_signals() - {signal.SIGKILL, signal.SIGSTOP}:
+                    if signal.getsignal(sig) == signal.SIG_IGN:
+                        signal.signal(sig, signal.SIG_DFL)
                 os.execvp(argv[0], argv)
             finally:
                 os._exit(127)
