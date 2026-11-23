@@ -50,7 +50,7 @@ The person's key is {pubkey}, and their server is {server}. The ledger of the si
 The site writes the messages that start with [site]. They tell you what the person typed in their shell, the desk, the jobs that ended, and notes."""
 
 WEBSITES = ("People can make websites on this site. A Lua program serves the pages, and the site gives a link "
-            "that opens it in a browser. `desk website` prints the guide, with an example that sells something.")
+            "that opens it in a browser. `desk website` prints the index of the guide.")
 
 LOCAL_TEST = ("This installation is a test server on one computer. Its CES servers are on 127.0.0.1, its links "
               "open only in a browser on that computer, and its credits are only for tests.")

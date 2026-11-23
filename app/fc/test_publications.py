@@ -505,13 +505,33 @@ class WebsiteTests(TestCase):
         trip.assert_not_called()
 
     def test_the_website_guide(self):
-        guide = desk.run(self.author.user, "website")[0]
-        self.assertIn("conn.pubkey", guide)
-        self.assertIn("application/vnd.fc.payment+json", guide)
-        self.assertIn('href="style.css"', guide)
-        self.assertIn("function on_l2call(memo, info)", guide)   # the example shop
+        index = desk.run(self.author.user, "website")[0]
+        names = [p.name.removesuffix(".md") for p in desk.WEBSITE.iterdir()]
+        self.assertIn("program", names)
+        for name in names:
+            if name != "index":
+                self.assertIn(f"`desk website {name}`", index.split("## Pages")[1])
+        program = desk.run(self.author.user, "website program")[0]
+        self.assertIn("conn.pubkey", program)
+        self.assertIn('href="style.css"', program)
+        shop = desk.run(self.author.user, "website shop")[0]
+        self.assertIn("application/vnd.fc.payment+json", shop)
+        self.assertIn("function on_l2call(memo, info)", desk.run(self.author.user, "website booklet.lua")[0])
+        for bad in ("bakery", "../AGENTS", "index.md x"):
+            with self.assertRaisesMessage(desk.DeskError, "the pages of the guide are booklet.lua, guestbook.lua, index"):
+                desk.run(self.author.user, f"website {bad}")
         self.assertIn("website", desk.run(self.author.user, "help")[0])
         self.assertIn("WEBSITES", desk.run(self.author.user, "man")[0])
+
+    def test_the_assistant_reads_each_page_of_the_guide_whole(self):
+        """The model reads only the start of a long output (fc/aishell.py)."""
+        from . import aishell
+        for p in desk.WEBSITE.iterdir():
+            op = "website " + p.name.removesuffix(".md")
+            page = desk.run(self.author.user, op)[0]
+            with patch("fc.push.ask", return_value={"ok": {"out": page + "\n", "result": "exit 0"}}):
+                read = aishell.Shell(self.author).run("desk " + op)[1]
+            self.assertTrue(read.endswith("\n" + page), f"{op}: the model reads to {read[-60:]!r}")
 
     def test_the_model_reads_what_a_publication_op_prints(self):
         from . import aishell

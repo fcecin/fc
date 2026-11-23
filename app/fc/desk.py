@@ -47,9 +47,10 @@ OPS_HELP = """the desk ops (man prints the whole manual):
   type <name> "<text>"  (\\n is Enter)"""
 # A copy of ces's loadables/vs1/vs1.lua, for `desk vs1` and the tests.
 VS1 = Path(__file__).resolve().parent / "static" / "fc" / "vs1.lua"
-# The guide to websites and its example, for `desk website`.
-WEBSITE = Path(__file__).resolve().parent / "shell" / "WEBSITE.md"
-WEBSITE_EXAMPLE = Path(__file__).resolve().parent / "shell" / "booklet.lua"
+# The guide to websites, for `desk website`: an index, its pages and the
+# examples. The assistant reads only the first 8 KiB that a command prints
+# (fc/aishell.py), so each file is shorter than that.
+WEBSITE = Path(__file__).resolve().parent / "shell" / "website"
 
 # A new window's place and size, when the op leaves them out.
 DEFAULTS = {"text": dict(x=60, y=60, w=360, h=200), "program": dict(x=80, y=80, w=560, h=420)}
@@ -69,10 +70,13 @@ def vs1_text():
     return "\n".join(line[3:] if line.startswith("-- ") else line[2:] for line in head)
 
 
-def website_text():
-    """The guide to websites, with the example shop at its end."""
-    return (WEBSITE.read_text().rstrip() + "\n\n```lua\n" + WEBSITE_EXAMPLE.read_text().rstrip()
-            + "\n```")
+def website_page(name):
+    """A page of the guide to websites, such as `program`, or an example, such
+    as `guestbook.lua`."""
+    pages = {p.name.removesuffix(".md"): p for p in WEBSITE.iterdir()}
+    if name not in pages:
+        raise DeskError(f"the pages of the guide are {', '.join(sorted(pages))}")
+    return pages[name].read_text().rstrip()
 
 
 def widget_json(w):
@@ -332,13 +336,13 @@ def _apply(user, words):
             return "\n".join(out), False
         if op == "help":
             return OPS_HELP + ("\n  publish <window> <name>    publish <name> <source.lua> on <server>    "
-                               "unpublish <name>    visit <name> [<path>]    website"), False
+                               "unpublish <name>    visit <name> [<path>]    website [<page>]"), False
         if op == "man":
             return render_to_string("fc/desk.txt").rstrip(), False
         if op == "vs1":
             return vs1_text(), False
         if op == "website":
-            return website_text(), False
+            return website_page(" ".join(args) or "index"), False
         if op == "screen":
             p = Profile.objects.get(user=user)
             if not args:

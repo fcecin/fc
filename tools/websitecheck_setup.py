@@ -28,7 +28,7 @@ from fc.models import Profile, Publication  # noqa: E402
 FC = Path(__file__).resolve().parent.parent
 CREDIT = 100_000_000   # raw units in one credit
 SITES = {
-    "shop": FC / "app/fc/shell/booklet.lua",
+    "shop": FC / "app/fc/shell/website/booklet.lua",
     "victim": FC / "tools/test/websites/victim.lua",
     "hostile": FC / "tools/test/websites/hostile.lua",
 }

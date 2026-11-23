@@ -83,8 +83,9 @@ OPS
      backslash.
 
 WEBSITES
-     website                   print the guide to websites, which tells how to
-                               write one, publish it and sell from it.
+     website [<page>]          print a page of the guide to websites, or its
+                               index. The guide tells how to write a website,
+                               publish it and sell from it.
      publish <window> <name>
      publish <name> <source.lua> on <server>
                                publish a running HTTP program and print its link.
