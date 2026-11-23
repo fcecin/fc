@@ -14,5 +14,6 @@ To make a website, do these steps.
 - `desk website program` tells about the request, the reply, the links, and what a page can do.
 - `desk website publish` tells how to publish a website, test it and change it.
 - `desk website shop` tells how a website sells something.
+- `desk website calls` tells how a website calls and pays other programs, and how they call it.
 - `desk website guestbook.lua` prints a small website. Each visitor can sign it.
 - `desk website booklet.lua` prints a website that sells a booklet.

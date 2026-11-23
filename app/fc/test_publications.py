@@ -555,7 +555,7 @@ class WebsiteTests(TestCase):
         self.assertIn("application/vnd.fc.payment+json", shop)
         self.assertIn("function on_l2call(memo, info)", desk.run(self.author.user, "website booklet.lua")[0])
         for bad in ("bakery", "../AGENTS", "index.md x"):
-            with self.assertRaisesMessage(desk.DeskError, "the pages of the guide are booklet.lua, guestbook.lua, index"):
+            with self.assertRaisesMessage(desk.DeskError, "the pages of the guide are booklet.lua, calls, guestbook.lua, index"):
                 desk.run(self.author.user, f"website {bad}")
         self.assertIn("website", desk.run(self.author.user, "help")[0])
         self.assertIn("WEBSITES", desk.run(self.author.user, "man")[0])
