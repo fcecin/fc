@@ -32,11 +32,9 @@ TYPES = {"text/html", "text/plain", "text/css",
          "image/png", "image/jpeg", "image/gif", "image/webp", "image/x-icon"}
 
 
-# How long fc waits for moved credit to arrive at the website's server.
-ARRIVAL = 5
-# One lock for each visitor and server, so that the requests of one page do
-# not each move credit. The locks are in one process: another worker can still
-# move once more, which costs the visitor one more VISIT_CREDIT at most.
+# One lock for each visitor and server, so that the requests of one page in
+# this process do not each read the balance and move credit. account.fund
+# holds back a second move in the other processes.
 FUNDING = [threading.Lock() for _ in range(64)]
 
 
@@ -64,23 +62,27 @@ def fund_visit(profile, server):
     """Give the visitor credit on `server` for a dial: move VISIT_CREDIT of
     theirs from their own server, and wait for it there. fc reads the balance
     before it moves, so a refusal of a dial is never the only reason for a
-    move."""
+    move, and it does not move on a balance that it cannot read."""
     home = account.here(profile)
     if home == server:
         raise NoCredit(f"You have no credit on {server}, the website's server.")
     with FUNDING[hash((profile.pubkey, server)) % len(FUNDING)]:
         account.forget(profile, server)
         _, raw = account.balance(profile, server)
-        if raw is not None and raw > 0:
+        if raw is None:
+            raise NoCredit(f"fc cannot read your balance on {server}, the website's server, now. "
+                           f"Load the page again in a moment.")
+        if raw > 0:
             return   # another request of this visitor moved it
-        try:
-            account.move(profile, home, server, VISIT_CREDIT)
-        except account.AccountError as e:
-            raise NoCredit(f"You have no credit on {server}, the website's server, and fc could not "
-                           f"move some there from {home}: {e.message}")
-        if not account.arrives(profile, server, 1, ARRIVAL):
-            raise NoCredit(f"fc moved 0.01 credit of yours from {home} to {server}, the website's server, "
-                           f"and it is not there yet. It stays yours. Load the page again in a moment.")
+        if raw < 0:
+            raise NoCredit(f"Your account on {server}, the website's server, cannot take credit now.")
+        error = account.fund(profile, server, VISIT_CREDIT, 1)
+    if error == "PENDING":
+        raise NoCredit(f"fc moved 0.01 credit of yours from {home} to {server}, the website's server, "
+                       f"and it is not there yet. It stays yours. Load the page again in a moment.")
+    if error:
+        raise NoCredit(f"You have no credit on {server}, the website's server, and fc could not "
+                       f"move some there from {home}: {account._why(error)}")
 
 
 def fetch(profile, publication, method, target, headers, body):
@@ -178,7 +180,8 @@ def redirect_target(location, target, mount):
     if joined.netloc != HOST or not publications.website_path(joined.path):
         return None
     out = mount + joined.path
-    if joined.query:
+    # urljoin keeps the query of the request for "?", which clears it.
+    if joined.query and not location.split("#")[0].endswith("?"):
         out += "?" + joined.query
     if joined.fragment:
         out += "#" + joined.fragment

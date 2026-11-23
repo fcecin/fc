@@ -13,6 +13,8 @@
   {% elif p.state == "pending" %}Waiting for your decision: <a href="/payments/review?id={{ p.pk }}">approve or decline</a>.
   {% elif p.state == "declined" %}Declined. No credits moved.
   {% elif p.state == "sending" %}fc sends this payment now.
+  {% elif p.state == "failed" and p.error == "MOVE_PENDING" %}No paid call went out. Credit of yours can be on its way to {{ p.server }}, and it stays yours there.
+  {% elif p.state == "failed" and p.error|slice:":5" == "MOVE_" %}No paid call went out, and no credit moved ({{ p.error|slice:"5:" }}).
   {% elif p.state == "failed" %}The payment did not go through, and the amount did not move ({{ p.error }}).
   {% else %}fc sent this payment, and no result came back ({{ p.error|default:"fc stopped before the result" }}). fc will not send it again. See your balance on {{ p.server }} before you buy this again.{% endif %}</p>
   <p class="fine">{{ p.created|date:"Y-m-d H:i" }}</p>

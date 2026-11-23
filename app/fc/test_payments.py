@@ -10,6 +10,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import Client, TestCase
 from django.utils import timezone
 
@@ -30,6 +31,7 @@ def ask_body(**fields):
 
 class PaymentTests(TestCase):
     def setUp(self):
+        cache.clear()   # the balances, and the holds of moves
         self.author = self.person("ana", "a")
         self.viewer = self.person("ben", "b")
         self.page = Publication.objects.create(owner=self.author, name="shop", server=SERVER, server_key="1" * 64,
@@ -79,8 +81,14 @@ class PaymentTests(TestCase):
         self.assertIn("/payments/review", asked["Content-Security-Policy"])
         return payment
 
-    def decide(self, payment, decision, client=None, **extra):
-        return (client or self.client).post(f"/payments/{payment.pk}/{decision}", **extra)
+    def decide(self, payment, decision, client=None, figures=None, **extra):
+        """A decision as the review page sends it: an approval carries the
+        move and its server that the page shows now, or `figures`."""
+        data = {}
+        if decision == "approve":
+            move, home, _ = payments.plan(payment) if figures is None else (*figures, None)
+            data = {"move": str(move), "source": home}
+        return (client or self.client).post(f"/payments/{payment.pk}/{decision}", data, **extra)
 
     def state(self, payment):
         return Payment.objects.get(pk=payment.pk).state
@@ -194,7 +202,7 @@ class PaymentTests(TestCase):
         adds to it (when `arrives`). Patches account.balance and account.move."""
         there = {"raw": raw}
 
-        def balance(profile, server):
+        def balance(profile, server, timeout=20):
             return (True, there["raw"]) if server == SERVER else (True, 10**12)
 
         def move(profile, src, dst, amount):
@@ -216,8 +224,9 @@ class PaymentTests(TestCase):
         payment = self.ask()
         move = self.credit(190000000)
         page = self.client.get(f"/payments/review?id={payment.pk}")
-        self.assertContains(page, "fc first moves 0.11000000 credits of yours from")
-        self.assertContains(page, "the server's fee for the call (at most 0.01000000 credits)")
+        self.assertContains(page, "fc first moves 0.10100000 credits of yours from")
+        self.assertContains(page, "0.00100000 credits for the fee")
+        self.assertContains(page, 'name="move" value="10100000"')
         self.assertContains(page, self.page.program_key)
         with self.bridge():
             done = self.decide(payment, "approve")
@@ -238,12 +247,66 @@ class PaymentTests(TestCase):
         Payment.objects.all().delete()
         payment = self.ask()
         move = self.credit(0, arrives=False)
-        with self.bridge(), patch.object(webdial, "ARRIVAL", 0.3):
+        with self.bridge(), patch.object(account, "ARRIVAL", 0.3):
             self.decide(payment, "approve")
         stored = Payment.objects.get(pk=payment.pk)
         self.assertEqual((stored.state, stored.error, move.call_count), ("failed", "MOVE_PENDING", 1))
-        self.assertContains(self.client.get(f"/payments/review?id={payment.pk}"), "it was not there yet")
+        self.assertContains(self.client.get(f"/payments/review?id={payment.pk}"), "it was not there in time")
+        self.assertContains(self.client.get("/payments"), "No paid call went out")
         self.assertEqual(self.paid_calls(), [])
+
+    def test_the_approval_is_for_the_move_that_the_page_showed(self):
+        """When the move is larger at the approval, or comes from another
+        server, fc shows the page again and moves nothing."""
+        payment = self.ask()
+        move = self.credit(190000000)
+        shown = payments.plan(payment)[:2]
+        patch.stopall()
+        move = self.credit(50000000)   # another tab spent credit there
+        with self.bridge():
+            again = self.decide(payment, "approve", figures=shown)
+            other = self.decide(payment, "approve", figures=(10**9, "elsewhere.example:55000"))
+        self.assertEqual(again["Location"], f"/payments/review?id={payment.pk}&changed=1")
+        self.assertEqual(other["Location"], f"/payments/review?id={payment.pk}&changed=1")
+        self.assertContains(self.client.get(again["Location"]), "approve again")
+        move.assert_not_called()
+        self.assertEqual((self.state(payment), self.paid_calls()), (Payment.PENDING, []))
+        with self.bridge():
+            done = self.decide(payment, "approve")   # the new figures
+        self.assertEqual(done["Location"], "/link/ana/shop/booklet")
+        move.assert_called_once()
+
+    def test_a_move_that_changed_during_the_send_is_not_made(self):
+        payment = self.ask()
+        move = self.credit(0)
+        Payment.objects.filter(pk=payment.pk).update(state=Payment.SENDING)
+        with self.bridge():
+            payments.send(Payment.objects.get(pk=payment.pk), 0, account.here(self.viewer))
+        stored = Payment.objects.get(pk=payment.pk)
+        self.assertEqual((stored.state, stored.error), ("failed", "MOVE_CHANGED"))
+        move.assert_not_called()
+        self.assertEqual(self.paid_calls(), [])
+
+    def test_a_move_with_no_answer_can_be_on_its_way(self):
+        """A lost reply of a move is not a refusal: the payment fails with no
+        call, and the next move to that server waits."""
+        payment = self.ask()
+        self.credit(0)
+        with self.bridge(), patch("fc.account.move", side_effect=account.AccountError("BRIDGE_LOST", "lost")):
+            self.decide(payment, "approve")
+        stored = Payment.objects.get(pk=payment.pk)
+        self.assertEqual((stored.state, stored.error), ("failed", "MOVE_PENDING"))
+        self.assertEqual(self.paid_calls(), [])
+        page = self.client.get(f"/payments/review?id={payment.pk}")
+        self.assertContains(page, "No paid call went out")
+        self.assertNotContains(page, "no credit moved")
+        # A new order meanwhile does not move credit again.
+        self.site_replies(ask_body(order="booklet-2"))
+        second = Payment.objects.get(order="booklet-2")
+        with self.bridge(), patch("fc.account.move") as move:
+            self.decide(second, "approve")
+        move.assert_not_called()
+        self.assertEqual(Payment.objects.get(pk=second.pk).error, "MOVE_PENDING")
 
     def test_a_refused_call_is_never_sent_again(self):
         """CES can refuse the call for too little credit also after fc moved
@@ -277,6 +340,16 @@ class PaymentTests(TestCase):
         patch("fc.account.balance", return_value=(False, None)).start()
         move = patch("fc.account.move").start()
         self.assertContains(self.client.get(f"/payments/review?id={payment.pk}"), "fc cannot read your balance")
+        with self.bridge():
+            self.decide(payment, "approve")
+        move.assert_not_called()
+        self.assertEqual(len(self.paid_calls()), 1)
+        # A balance below 0 there is not one to add to.
+        Payment.objects.all().delete()
+        self.calls = []
+        payment = self.ask()
+        patch.stopall()
+        move = self.credit(-5)
         with self.bridge():
             self.decide(payment, "approve")
         move.assert_not_called()

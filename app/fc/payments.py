@@ -29,16 +29,17 @@ BACK = re.compile(r"/(?![/\\])[!-~]{0,511}")
 # The paid call waits for the program. The bridge exchange stops after
 # CALL_TIMEOUT. Before the call, fc can move credit to the website's server
 # (a bridge op of up to MOVE_TIMEOUT) and wait for it there (up to
-# webdial.ARRIVAL). A payment that is still sending after SEND_LIMIT has an
+# account.ARRIVAL). A payment that is still sending after SEND_LIMIT has an
 # unknown outcome: the process that sent it stopped before it kept the
 # result.
 CALL_TIMEOUT = 60
 MOVE_TIMEOUT = 20
-SEND_LIMIT = timedelta(seconds=MOVE_TIMEOUT + webdial.ARRIVAL + CALL_TIMEOUT + 60)
+SEND_LIMIT = timedelta(seconds=MOVE_TIMEOUT + account.ARRIVAL + CALL_TIMEOUT + 60)
 # CES takes its fee for a call from the payer before it takes the amount, and
-# keeps the fee also when the amount is not there. fc moves the amount and
-# this much more for the fee. Raw units: 0.01 credit.
-FEE_ALLOWANCE = 1_000_000
+# keeps the fee also when the amount is not there. When fc moves credit for a
+# payment, it moves this much more for that fee: the query fee of fc's network
+# servers is 0.0008 credit (tools/netconf.py). Raw units: 0.001 credit.
+FEE_ALLOWANCE = 100_000
 # A request that waits this long for a decision is declined, so an old request
 # never opens on a later page load.
 PENDING_LIFE = timedelta(minutes=10)
@@ -130,45 +131,49 @@ def _call(payment, pid):
 def shortfall(payment, balance):
     """The credit that fc moves to the website's server before the paid call,
     for a payer who has `balance` raw there: what they lack for the amount
-    and the fee. 0 when they have enough there, or when that server is
-    their own server, or when their balance there is unknown."""
-    if balance is None or account.here(payment.payer) == payment.server:
+    and the fee. 0 when they have enough there, when that server is their
+    own server, or when their balance there is unknown or below 0."""
+    if balance is None or balance < 0 or account.here(payment.payer) == payment.server:
         return 0
     return max(0, payment.amount + FEE_ALLOWANCE - balance)
 
 
-def fund(payment):
-    """Move what the payer lacks on the website's server from the payer's own
-    server, and wait for it there. Returns None when the call can go out,
-    else the error of the payment. fc reads the balance before the call and
-    never sends a call again, so a refusal of a call is never a reason to
-    move credit."""
+def plan(payment):
+    """(the move, the server that it comes from) for the payment now, as the
+    review page shows them."""
     account.forget(payment.payer, payment.server)
     _, balance = account.balance(payment.payer, payment.server)
-    need = shortfall(payment, balance)
+    return shortfall(payment, balance), account.here(payment.payer), balance
+
+
+def fund(payment, limit, source):
+    """Move what the payer lacks on the website's server, and wait for it
+    there. `limit` and `source` are the move and its server that the payer
+    approved. Returns None when the call can go out, else the error of the
+    payment. fc reads the balance before the call and never sends a call
+    again, so a refusal of a call is never a reason to move credit."""
+    need, home, balance = plan(payment)
+    if home != source or need > limit:
+        return "MOVE_CHANGED"
     if not need:
         return None
-    try:
-        account.move(payment.payer, account.here(payment.payer), payment.server, need)
-    except account.AccountError as e:
-        return f"MOVE_{e.code}"[:64]
-    if not account.arrives(payment.payer, payment.server, balance + need, webdial.ARRIVAL):
-        return "MOVE_PENDING"
-    return None
+    error = account.fund(payment.payer, payment.server, need, balance + need)
+    return f"MOVE_{error}"[:64] if error else None
 
 
-def send(payment):
+def send(payment, limit=0, source=None):
     """Send the approved payment: one paid call, as the payer, to the program
     that has the published program key. When the payer lacks credit on the
-    website's server, fc moves it there first, and the call goes out only
-    when it is there. fc never sends the call again."""
+    website's server, fc moves it there first, at most `limit` from
+    `source`, and the call goes out only when it is there. fc never sends
+    the call again."""
     try:
         pid = webdial.live_pid(payment.server, payment.server_key, payment.source, payment.payee)
     except bridge.BridgeError as e:
         return finish(payment, Payment.FAILED, error=e.code)
     if pid is None:
         return finish(payment, Payment.FAILED, error="WEBSITE_OFFLINE")
-    error = fund(payment)
+    error = fund(payment, limit, source or account.here(payment.payer))
     if error:
         return finish(payment, Payment.FAILED, error=error)
     try:
@@ -218,10 +223,10 @@ def review(request):
     if not (pk.isascii() and pk.isdigit()) or len(pk) > 18:
         raise Http404
     payment = current(mine(request, int(pk)))
-    _, balance = account.balance(payment.payer, payment.server)
+    moves, home, balance = plan(payment)
     response = render(request, "fc/pay.html", {
-        "p": payment, "back": back_url(payment), "home": account.here(payment.payer), "balance": balance,
-        "moves": shortfall(payment, balance), "fee": FEE_ALLOWANCE,
+        "p": payment, "back": back_url(payment), "home": home, "balance": balance, "moves": moves,
+        "fee": FEE_ALLOWANCE, "changed": request.GET.get("changed") == "1",
     })
     response["Cache-Control"] = "private, no-store"
     return response
@@ -238,6 +243,16 @@ def _after(payment, done):
 @require_POST
 def approve(request, pk):
     payment = current(mine(request, pk))
+    # The approval is for the move that the review page showed, from the
+    # server that it showed. When the move is now larger or comes from
+    # another server, the page opens again with the new figures.
+    shown = request.POST.get("move", "0")
+    limit = int(shown) if shown.isascii() and shown.isdigit() and len(shown) < 20 else 0
+    source = request.POST.get("source", "")
+    if payment.state == Payment.PENDING:
+        need, home, _ = plan(payment)
+        if home != source or need > limit:
+            return HttpResponseRedirect(review_path(payment) + "&changed=1", status=303)
     now = timezone.now()
     # Only one request can change a pending payment to sending: a second click,
     # tab or retry reads the payment as it is.
@@ -246,7 +261,7 @@ def approve(request, pk):
         state=Payment.SENDING, decided=now, deadline=now + SEND_LIMIT)
     if taken:
         payment.refresh_from_db()
-        send(payment)
+        send(payment, limit, source)
     payment.refresh_from_db()
     return _after(payment, Payment.PAID)
 

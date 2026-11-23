@@ -4,7 +4,13 @@ import socket
 import threading
 from unittest.mock import patch
 
+import os
+import subprocess
+import sys
+
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.cache import cache
 from django.test import Client, TestCase
 
 from . import account, bridge, desk, kernel, launch, webdial
@@ -57,6 +63,7 @@ class Program:
 
 class WebsiteTests(TestCase):
     def setUp(self):
+        cache.clear()   # the balances, and the holds of moves
         self.author = self.person("ana", "a")
         self.viewer = self.person("ben", "b")
         self.page = Publication.objects.create(owner=self.author, name="board", server=SERVER, server_key="1" * 64,
@@ -215,6 +222,21 @@ class WebsiteTests(TestCase):
             self.assertIn("form-action 'none'", r["Content-Security-Policy"])
             self.assertNotIn("script-src 'self'", r["Content-Security-Policy"])
 
+    def test_an_error_of_a_middleware_under_link_has_the_policy(self):
+        """The header middleware is outside the others, so a host that Django
+        refuses also gets the policy under /link/."""
+        refused = Client(HTTP_HOST="evil.example").get("/link/ana/board/")
+        self.assertEqual(refused.status_code, 400)
+        self.assertIn("sandbox", refused["Content-Security-Policy"])
+
+    def test_each_module_imports_first(self):
+        """No import cycle of the website modules breaks at import time."""
+        env = dict(os.environ, DJANGO_SETTINGS_MODULE="fcsite.settings")
+        for module in ("fc.webdial", "fc.payments", "fc.publications", "fc.account", "fc.desk"):
+            run = subprocess.run([sys.executable, "-c", f"import django; django.setup(); import {module}"],
+                                 cwd=settings.BASE_DIR, env=env, capture_output=True, text=True)
+            self.assertEqual(run.returncode, 0, f"{module}: {run.stderr[-400:]}")
+
     def test_a_form_post_must_come_from_a_page_of_the_same_website(self):
         """The pages of all websites share fc's origin. fc sends a post only
         when the page that sent it is in the same website."""
@@ -247,6 +269,7 @@ class WebsiteTests(TestCase):
                 self.post("/link/ana/board/sign", referer=HERE + "a/..%2F..%2F..%2Flink/ben/other/"),
                 self.post("/link/ana/board/sign", referer=HERE + "a//b"),
                 self.post("/link/ana/board/sign", referer=HERE + "a%5Cb"),
+                self.post("/link/ana/board/sign", referer=HERE + "a%2Fb"),
             ]
             self.assertEqual([r.status_code for r in refused], [403] * len(refused))
             ping = self.client.post("/link/ana/board/sign", "PING", content_type="text/ping",
@@ -312,6 +335,8 @@ class WebsiteTests(TestCase):
         self.assertEqual(follow("#top"), "/link/ana/board/orders/view#top")
         self.assertEqual(follow("#top", "/orders/view?page=2"), "/link/ana/board/orders/view?page=2#top")
         self.assertEqual(follow("next", "/orders/view?page=2"), "/link/ana/board/orders/next")
+        self.assertEqual(follow("?", "/page?old=1"), "/link/ana/board/page")
+        self.assertEqual(follow("?#x", "/page?old=1"), "/link/ana/board/page#x")
         self.assertEqual(follow("../../../x"), "/link/ana/board/x")
         self.assertEqual(follow("/"), "/link/ana/board/")
         for bad in ("http://evil.example/", "//evil.example/x", "http://testserver/account/key", "https://site/x",
@@ -359,7 +384,7 @@ class WebsiteTests(TestCase):
         refused = launch.LaunchError("CES_ERROR_INSUFFICIENT_BALANCE")
         there = {"raw": 0}
 
-        def balance(profile, server):
+        def balance(profile, server, timeout=20):
             return (there["raw"] > 0, there["raw"])
 
         def move(profile, src, dst, amount):
@@ -377,16 +402,38 @@ class WebsiteTests(TestCase):
         # fc cannot move credit there.
         with patch("fc.webdial.roundtrip", side_effect=[refused]) as trip, \
              patch("fc.account.balance", return_value=(False, 0)), \
-             patch("fc.account.move", side_effect=account.AccountError("X", "Not enough credit on this server.")):
+             patch("fc.account.move", side_effect=account.AccountError("CES_ERROR_INSUFFICIENT_BALANCE", "no")):
             page = self.client.get("/link/ana/board/")
         self.assertEqual((page.status_code, trip.call_count), (402, 1))
         self.assertIn(b"Not enough credit", page.content)
         # The credit does not arrive in time: the visitor loads the page again.
-        with patch("fc.webdial.roundtrip", side_effect=[refused]) as trip, patch.object(webdial, "ARRIVAL", 0.3), \
+        with patch("fc.webdial.roundtrip", side_effect=[refused]) as trip, patch.object(account, "ARRIVAL", 0.3), \
              patch("fc.account.balance", return_value=(False, 0)), patch("fc.account.move") as moved:
             page = self.client.get("/link/ana/board/")
         self.assertEqual((page.status_code, trip.call_count, moved.call_count), (402, 1, 1))
         self.assertIn(b"Load the page again in a moment", page.content)
+        # A reload while that credit is on its way does not move it again,
+        # also in another worker: the move holds back the next one.
+        with patch("fc.webdial.roundtrip", side_effect=[refused]), \
+             patch("fc.account.balance", return_value=(False, 0)), patch("fc.account.move") as moved:
+            page = self.client.get("/link/ana/board/")
+        self.assertEqual((page.status_code, moved.call_count), (402, 0))
+        cache.clear()
+        # A move with no answer can be on its way too: no second move.
+        with patch("fc.webdial.roundtrip", side_effect=[refused, refused]), \
+             patch("fc.account.balance", return_value=(False, 0)), \
+             patch("fc.account.move", side_effect=account.AccountError("BRIDGE_LOST", "lost")) as moved:
+            first = self.client.get("/link/ana/board/")
+            again = self.client.get("/link/ana/board/")
+        self.assertEqual((first.status_code, again.status_code, moved.call_count), (402, 402, 1))
+        self.assertIn(b"not there yet", first.content)
+        cache.clear()
+        # A balance that fc cannot read, or one below 0, moves nothing.
+        for unreadable in ((False, None), (True, -5)):
+            with patch("fc.webdial.roundtrip", side_effect=[refused]), \
+                 patch("fc.account.balance", return_value=unreadable), patch("fc.account.move") as moved:
+                self.assertEqual(self.client.get("/link/ana/board/").status_code, 402, unreadable)
+            moved.assert_not_called()
         # The visitor's own server is the website's server.
         self.viewer.server = SERVER
         self.viewer.save()

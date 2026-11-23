@@ -139,11 +139,17 @@ async function engine(name) {
              paid: (html.match(/>Paid\./g) || []).length }
   }
 
+  // The paid calls that reached the hostile program, as it counts them.
+  async function hostileCalls() {
+    return Number(await (await ctx.request.get(H + 'calls')).text())
+  }
+
   async function check(label, fn, expect = { entries: 0, paid: 0 }) {
     running = `${name} ${label}`
     const victim0 = (await victimLog(page)).length
     const out0 = outside.requests.length
     const pay0 = await receipts()
+    const calls0 = await hostileCalls()
     let ok = false
     let detail = ''
     try {
@@ -154,6 +160,8 @@ async function engine(name) {
     const victim = (await victimLog(page)).slice(victim0)
     const out = outside.requests.slice(out0)
     const pay = await receipts()
+    const calls = await hostileCalls()
+    if (calls !== calls0) { ok = false; detail += ` the hostile program got ${calls - calls0} paid calls` }
     if (victim.length) { ok = false; detail += ` victim got [${victim.join(', ')}]` }
     if (out.length) { ok = false; detail += ` outside got [${out.join(', ')}]` }
     if (pay.entries - pay0.entries !== expect.entries || pay.paid - pay0.paid !== expect.paid) {
@@ -354,6 +362,17 @@ async function engine(name) {
   async function framed(src, selector) {
     const tab = await ctx.newPage()
     try {
+      // The positive control: a page that allows frames shows in the same
+      // kind of frame, and the check sees into it.
+      await tab.route(SITE + '/__frameable', (route) => route.fulfill({
+        contentType: 'text/html', body: '<!doctype html><p id="ok">frameable</p><header>h</header>' }))
+      await tab.route(SITE + '/__control', (route) => route.fulfill({
+        contentType: 'text/html', body: `<!doctype html><iframe width="600" height="400" src="/__frameable"></iframe>` }))
+      await tab.goto(SITE + '/__control')
+      await sleep(800)
+      const control = tab.frames().find((f) => f !== tab.mainFrame())
+      const seen = control ? await within(3000, control.locator(selector).count(), -1) : -1
+      if (seen !== 1) return [false, `the check cannot see into a frame here (control: ${seen})`]
       await tab.route(SITE + '/__frame', (route) => route.fulfill({
         contentType: 'text/html', body: `<!doctype html><iframe width="600" height="400" src="${src}"></iframe>` }))
       const target = tab.waitForResponse((r) => r.url() === new URL(src, SITE).href, { timeout: 10000 })
@@ -363,7 +382,7 @@ async function engine(name) {
       const frame = tab.frames().find((f) => f !== tab.mainFrame())
       // -1: the frame has no document, as when the browser refused the page.
       const shown = frame ? await within(3000, frame.locator(selector).count(), -1) : -1
-      return [status === 200 && shown <= 0, `the framed page gave ${status}, elements shown: ${shown}`]
+      return [status === 200 && shown <= 0, `the framed page gave ${status}, elements shown: ${shown} (control: 1)`]
     } finally {
       await tab.close()
     }

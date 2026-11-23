@@ -5,6 +5,12 @@
 local V = "/link/@OWNER@/wc-victim"
 local OUT = "@OUT@"
 local incoming = {}
+-- Each paid call that reaches this program. No check may approve one.
+local calls = 0
+function on_l2call(memo, info)
+  calls = calls + 1
+  return "a hostile program took it"
+end
 
 local function reply(conn, status, headers, body)
   conn:write("HTTP/1.1 " .. status .. "\r\n" .. headers ..
@@ -57,6 +63,9 @@ local PNG = "\137\80\78\71\13\10\26\10\0\0\0\13\73\72\68\82\0\0\0\1\0\0\0\1\8\6\
 
 local function handle(conn, method, target)
   local path, query = target:match("^([^?]*)%??(.*)$")
+  if method == "GET" and path == "/calls" then
+    return reply(conn, "200 OK", "Content-Type: text/plain\r\n", tostring(calls))
+  end
   if method == "GET" and path == "/style.css" then
     return reply(conn, "200 OK", "Content-Type: text/css\r\n", "body { color: rgb(1, 2, 3) }")
   end

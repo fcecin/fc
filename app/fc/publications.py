@@ -173,9 +173,11 @@ def referred_by(request, page):
         return False
     if f"{referer.scheme}://{referer.netloc}" != origin(request):
         return False
-    here = mount(page.owner.handle, page.name) + "/"
-    path = unquote(referer.path)
-    return path.startswith(here) and segments_ok(path[len(here):].split("/"))
+    # Split before decoding, so that an encoded "/" stays in its segment,
+    # where segments_ok refuses it.
+    parts = [unquote(x) for x in referer.path.split("/")]
+    return (len(parts) >= 5 and parts[:4] == ["", "link", page.owner.handle, page.name]
+            and segments_ok(parts[4:]))
 
 
 def from_the_website(request, page):

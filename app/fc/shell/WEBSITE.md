@@ -4,7 +4,7 @@ A website is a Lua program that serves HTTP. People open it in their browser at 
 
 ## The program
 
-- Each dial carries one HTTP/1.1 request, a GET, HEAD or POST, with `Host: site`. In `on_data`, add the bytes to a buffer until the headers end with an empty line, and until the body has its `Content-Length`.
+- Each dial carries one HTTP/1.1 request, a GET or a POST, with `Host: site`. A HEAD of the browser comes to the program as a GET, and the site gives the browser the length of the page with no body. In `on_data`, add the bytes to a buffer until the headers end with an empty line, and until the body has its `Content-Length`.
 - Write one reply with a status line, `Content-Type`, `Content-Length` and the body. Then close the connection with `conn:close()`.
 - `conn.pubkey` is the key of the visitor, as 32 raw bytes. Every dial has it, also a dial from `cesh dial`. A byte of a key can have any value, also the value of a space or a newline, so do not check the bytes. To show a key as text, use `key:gsub(".", function(c) return string.format("%02x", c:byte()) end)`. Use the key to know who posts, who owns what, and who paid. The request has no cookies, and the site drops the cookies of a reply.
 - A request body can hold 1 MiB and a reply 8 MiB. The program answers in 15 seconds, or the visitor gets an error.

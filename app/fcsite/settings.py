@@ -33,13 +33,15 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    # First, so that it sees each response, also an error of a middleware
+    # below it, and a response under /link/ always gets a policy.
+    "fc.middleware.SecurityHeaders",
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
-    "fc.middleware.SecurityHeaders",
 ]
 
 ROOT_URLCONF = "fcsite.urls"

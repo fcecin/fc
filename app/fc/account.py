@@ -24,13 +24,14 @@ def here(profile):
     return profile.server or settings.FC_LEDGER
 
 
-def balance(profile, server):
-    """(exists, raw balance) of the person's key on `server`."""
+def balance(profile, server, timeout=20):
+    """(exists, raw balance) of the person's key on `server`. The balance is
+    None when fc cannot read it."""
     key = f"acct:{profile.pubkey}:{server}"
     r = cache.get(key)
     if r is None:
         try:
-            b = bridge.call("balance", server=server, pubkey=profile.pubkey)
+            b = bridge.call("balance", timeout=timeout, server=server, pubkey=profile.pubkey)
             r = (bool(b.get("exists")), b.get("balance", 0) if b.get("exists") else 0)
         except bridge.BridgeError:
             r = (False, None)
@@ -88,20 +89,57 @@ def move(profile, from_server, to_server, amount):
     return r["balance"]
 
 
-def arrives(profile, server, at_least, seconds):
-    """Wait up to `seconds` until the person's balance on `server` is at least
-    `at_least` raw. CES takes a move from the first server at once, and the
-    credit arrives at the second one when the two servers settle, which is
-    usually at once too. True when it is there."""
-    end = time.monotonic() + seconds
+# How long fc waits for moved credit to arrive at the second server, in
+# seconds. CES takes a move from the first server at once, and the credit
+# arrives at the second one when the two servers settle, usually at once too.
+ARRIVAL = 5
+# A move that fc did not see arrive holds back the next move of the same
+# person to the same server for this long, in seconds, also in other workers.
+# So a reload or a second request does not move the credit again.
+MOVE_HOLD = 60
+# The errors of a move after which no credit left the first server.
+MOVE_REFUSED = {
+    "BRIDGE_DOWN", "BAD_SEALED_KEY", "BAD_AMOUNT", "BAD_ADDRESS", "BAD_DEST_SERVER", "ADDRESS_NOT_PUBLIC",
+    "CANNOT_RESOLVE", "CANNOT_CONNECT", "SAME_SERVER", "CES_ERROR_ORIGIN_NOT_FOUND",
+    "CES_ERROR_INSUFFICIENT_BALANCE", "CES_ERROR_BAD_INPUT", "CES_ERROR_UNKNOWN_PEER",
+}
+
+
+def arrives(profile, server, at_least, seconds=None):
+    """Wait up to `seconds` (ARRIVAL when None) until the person's balance on
+    `server` is at least `at_least` raw. True when it is there."""
+    end = time.monotonic() + (ARRIVAL if seconds is None else seconds)
     while True:
-        forget(profile, server)
-        _, raw = balance(profile, server)
-        if raw is not None and raw >= at_least:
-            return True
-        if time.monotonic() >= end:
+        left = end - time.monotonic()
+        if left <= 0:
             return False
-        time.sleep(0.2)
+        forget(profile, server)
+        _, raw = balance(profile, server, timeout=max(0.5, left))
+        if raw is not None and raw >= at_least and time.monotonic() <= end:
+            return True
+        time.sleep(max(0, min(0.2, end - time.monotonic())))
+
+
+def fund(profile, server, amount, at_least):
+    """Move `amount` raw of the person from their own server to `server`, and
+    wait until their balance there is at least `at_least`. Returns None when
+    it is there. Else returns "PENDING", when credit can be on its way (a
+    move with no answer, or a move that did not arrive yet), or the code of
+    the refusal, when no credit left."""
+    hold = f"moving:{profile.pubkey}:{server}"
+    if not cache.add(hold, 1, MOVE_HOLD):
+        return "PENDING"
+    try:
+        move(profile, here(profile), server, amount)
+    except AccountError as e:
+        if e.code in MOVE_REFUSED:
+            cache.delete(hold)
+            return e.code
+        return "PENDING"
+    if arrives(profile, server, at_least):
+        cache.delete(hold)
+        return None
+    return "PENDING"
 
 
 def _why(code):
